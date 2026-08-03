@@ -47,9 +47,18 @@ def build_messages(rec: dict, policy: str) -> dict | None:
     }
 
 
-def make_collator(processor):
-    """Batch collator shared by SFT and QAT: loss only on the assistant JSON turn."""
+def make_collator(processor, max_length: int | None = None):
+    """Batch collator shared by SFT and QAT: loss only on the assistant JSON turn.
+
+    No truncation is applied to the processor call: HF's default right-side
+    truncation would silently cut off the assistant's JSON answer (the training
+    target) rather than the prompt, corrupting labels without any error. Instead,
+    an overlong batch raises loudly with the offending sample ids so it can be
+    fixed in the data rather than discovered as an unexplained accuracy drop.
+    """
     from qwen_vl_utils import process_vision_info
+
+    limit = max_length or getattr(processor.tokenizer, "model_max_length", None)
 
     def collate(batch):
         texts, images = [], []
@@ -62,6 +71,14 @@ def make_collator(processor):
             imgs, _ = process_vision_info(msgs)
             images.append(imgs)
         inputs = processor(text=texts, images=images, return_tensors="pt", padding=True)
+        if limit and inputs["input_ids"].shape[1] > limit:
+            offenders = [ex["images"][0] for ex in batch]
+            raise ValueError(
+                f"batch sequence length {inputs['input_ids'].shape[1]} exceeds "
+                f"model_max_length={limit}; offending samples: {offenders}. "
+                "Fix by trimming these samples' line items or raising max_pixels "
+                "cap, not by truncating — truncation would cut the label."
+            )
         labels = inputs["input_ids"].clone()
         labels[labels == processor.tokenizer.pad_token_id] = -100
         # mask everything before the assistant turn so loss covers only the JSON answer
@@ -118,6 +135,10 @@ def main() -> None:
     )
     model = get_peft_model(model, lora)
     model.print_trainable_parameters()
+    # LoRA freezes the base model's input embeddings, so gradient checkpointing
+    # (enabled below) sees no tensor requiring grad at the graph's entry point
+    # and errors ("element 0 of tensors does not require grad") without this.
+    model.enable_input_require_grads()
 
     collate = make_collator(processor)
 

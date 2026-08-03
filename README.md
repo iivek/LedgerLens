@@ -61,7 +61,7 @@ uv run ledgerlens synth --n 2000            # synthetic invoices → data/synthe
 
 The synthetic generator renders Jinja2 HTML templates (thermal receipt + A4 invoice), with randomized vendors, currencies (incl. `1.234,56`-style separators and zero-decimal IDR/VND), then applies phone-photo augmentations (perspective, shadows, low light, motion blur, JPEG). Gold labels are exact by construction.
 
-CORD and SROIE are **research-use** datasets; model weights trained on them are labeled accordingly.
+CORD and SROIE are **research-use** datasets; model weights trained on them are labeled accordingly. See [DATA_LICENSES.md](DATA_LICENSES.md) for exact terms — CORD is confirmed CC-BY-4.0, SROIE's dataset-level license could not be independently verified and is treated as research-use only pending confirmation from the ICDAR/RRC organizers.
 
 ## Training & compression (GPU box, 24 GB)
 

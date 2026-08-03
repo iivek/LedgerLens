@@ -77,8 +77,12 @@ def main() -> None:
     for new_idx, layer in enumerate(kept):  # keep rotary/cache indexing consistent
         layer.self_attn.layer_idx = new_idx
     llm.layers = kept
-    model.config.text_config.num_hidden_layers = len(kept) \
-        if hasattr(model.config, "text_config") else len(kept)
+    # Qwen2-VL nests the text config; update whichever layout this transformers
+    # version uses, or both. Mismatched config vs. state_dict layer counts don't
+    # hard-fail on reload — from_pretrained warns and reconstructs extra/random
+    # layers, silently producing a broken checkpoint, so both must be kept in sync.
+    if hasattr(model.config, "text_config"):
+        model.config.text_config.num_hidden_layers = len(kept)
     if hasattr(model.config, "num_hidden_layers"):
         model.config.num_hidden_layers = len(kept)
 

@@ -40,6 +40,12 @@ def calibration_texts(splits: list[str], n: int) -> list[str]:
 
 
 def run_awq(args: argparse.Namespace) -> None:
+    # VERIFY FIRST RUN: Qwen's official Qwen2-VL AWQ recipe uses a custom
+    # quantizer subclass for multimodal calibration, not this generic
+    # AutoAWQForCausalLM.from_pretrained + text-only calib_data path. Confirm
+    # this actually quantizes only the LLM submodule correctly (check the saved
+    # checkpoint's vision tower is untouched fp16) before trusting the output —
+    # do not assume this generic path is correct for a VLM checkpoint.
     from awq import AutoAWQForCausalLM
     from transformers import AutoProcessor, AutoTokenizer
 

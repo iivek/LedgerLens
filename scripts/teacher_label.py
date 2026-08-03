@@ -31,7 +31,9 @@ def main() -> None:
     ap.add_argument("--teacher", default="Qwen/Qwen2.5-VL-7B-Instruct")
     ap.add_argument("--split", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--load-in-4bit", action="store_true", default=True)
+    # BooleanOptionalAction so --no-load-in-4bit can actually override the
+    # default (plain store_true+default=True can never be turned off from the CLI)
+    ap.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--limit", type=int)
     args = ap.parse_args()
 
