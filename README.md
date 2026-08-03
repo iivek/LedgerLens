@@ -2,7 +2,22 @@
 
 **Offline, on-device invoice & receipt extraction.** Photo of a receipt in → structured JSON out (vendor, date, currency, total, tax, line items) — running privately on a phone, no network, no cloud. Because it must run on a mid-range Android device, model compression (distillation → quantization → pruning) is a *requirement of the use case*, and the headline deliverable is the accuracy-vs-size/latency **Pareto grid**.
 
-> **Status: pre-training scaffold.** The eval harness, data pipeline, synthetic generator, training/compression scripts and Android app skeleton are built; no models have been trained yet, so there are **no results to report**. The baseline-vs-final table will appear here once produced by the harness — every number in this README will come from `results/results.csv`, reproducibly.
+> **Status: Weekend 1 baselines only — no distillation/compression has happened yet.** These are stock, off-the-shelf Qwen2-VL-2B numbers, measured before any of *this project's* training. Every number below comes straight from `results/results.csv`, produced by `uv run ledgerlens eval` — nothing here is hand-computed.
+
+## Baseline: stock Qwen2-VL-2B, zero fine-tuning
+
+Measured on this repo's own eval harness, running the deployment runtime (llama.cpp, this exact GGUF) locally on a MacBook M1 Pro — not a rented GPU, not the phone yet. `fields_em_mean` averages only the fields each dataset actually annotates (SROIE: vendor/date/total; CORD: total/tax/line-items — see [CLAUDE.md](CLAUDE.md) on why).
+
+| Variant | Split (n) | JSON valid | Field EM (mean) | Line-item F1 | Latency p50 / mean |
+|---|---|---|---|---|---|
+| Q4_K_M (940 MB) | SROIE (347) | 96.0% | 86.6% | — | 13.6s / 17.0s |
+| Q4_K_M (940 MB) | CORD (100) | 98.0% | 60.0% | 76.0% | 8.9s / 13.7s |
+| Q8_0 (1.5 GB) | SROIE (347) | 95.7% | 84.8% | — | 13.7s / 18.5s |
+| Q8_0 (1.5 GB) | CORD (100) | 98.0% | 63.5% | 74.7% | 10.3s / 15.9s |
+
+**Early read:** the stock 2B model is already a strong baseline — SROIE mean field exact-match in the mid-80s with no fine-tuning at all. Q8_0 is *not* meaningfully more accurate than Q4_K_M here (within noise, arguably slightly lower on SROIE) despite being 60% larger and slower — an early hint of diminishing PTQ returns worth checking against the AWQ/GPTQ grid later. CORD scores lower because it's a harder distribution (worse for zero-shot vendor/date-free extraction, richer line-item structure). Per the spec's contingency: if distillation doesn't clearly beat this stock baseline, the story pivots to "how small can we go," not "look how much we improved."
+
+None of this involves the teacher (Qwen2.5-VL-7B), SFT, PTQ/QAT beyond stock GGUF quantization, or pruning yet — those are Weekends 2–3.
 
 ## Architecture
 

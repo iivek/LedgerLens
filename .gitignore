@@ -14,8 +14,10 @@ data/synthetic/images/
 data/personal_holdout/
 models/
 runs/
-results/*.csv
-!results/.gitkeep
+
+# results/*.csv is NOT ignored: it's the small, versioned provenance record
+# (one row per Pareto-grid variant) that every README/writeup number must trace
+# back to. Only the large per-sample dumps in runs/ are excluded above.
 
 # Tooling
 .DS_Store
