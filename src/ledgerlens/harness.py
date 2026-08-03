@@ -45,8 +45,9 @@ def evaluate(runner: ModelRunner, samples: list[Sample], run_dir: Path,
                 "id": s.id, "source": s.source, "raw": raw, "error": error,
                 "latency_s": latency, "score": asdict(score),
             }, ensure_ascii=False) + "\n")
+            f.flush()  # progress must be observable while a long eval runs
             if progress and (i + 1) % 10 == 0:
-                print(f"  [{i + 1}/{len(samples)}] {s.id}")
+                print(f"  [{i + 1}/{len(samples)}] {s.id}", flush=True)
     return scores
 
 

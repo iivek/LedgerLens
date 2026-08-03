@@ -202,11 +202,18 @@ def generate_dataset(n: int, out_dir: Path, seed: int = 17, augment: bool = True
             gold = ctx.pop("__gold__")
             sample_id = f"synth_{i:05d}"
             png = img_dir / f"{sample_id}.png"
-            renderer.render(env.get_template(template).render(**ctx), png, width)
-            _trim_white(png)
-            if augment:
-                img = cv2.imread(str(png))
-                cv2.imwrite(str(png), augment_photo(img, rng))
+            # Resumable: rng draws replay identically each run (fixed seed), so an
+            # existing image is guaranteed to match its gold — skip the render.
+            # augment_photo consumes rng too, so replay it even when skipping.
+            if png.exists():
+                if augment:
+                    augment_photo(np.zeros((8, 8, 3), dtype=np.uint8), rng)
+            else:
+                renderer.render(env.get_template(template).render(**ctx), png, width)
+                _trim_white(png)
+                if augment:
+                    img = cv2.imread(str(png))
+                    cv2.imwrite(str(png), augment_photo(img, rng))
             records.append({"id": sample_id, "image": str(png.relative_to(out_dir)),
                             "source": "synthetic", "gold": gold})
             if (i + 1) % 50 == 0:
