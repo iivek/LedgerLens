@@ -17,6 +17,21 @@ from .schema import NUMERIC_FIELDS, SCALAR_FIELDS, Extraction, LineItem
 NUMERIC_TOLERANCE = 0.005  # absolute; totals compared after separator normalization
 LINE_ITEM_MATCH_THRESHOLD = 0.5  # min pairwise similarity for a Hungarian match to count
 
+# Datasets only score the fields they actually annotate: an unannotated field is
+# stored as null in gold, which must mean "unknown", never "wrong if predicted".
+# Fixed alongside the metrics, before any baseline row is recorded.
+_ALL_FIELDS = set(SCALAR_FIELDS) | {"line_items"}
+ANNOTATED_FIELDS: dict[str, set[str]] = {
+    "cord": {"total", "tax", "line_items"},
+    "sroie": {"vendor", "date", "total"},
+    "synthetic": _ALL_FIELDS,
+    "personal": _ALL_FIELDS,
+}
+
+
+def annotated_fields(source: str) -> set[str]:
+    return ANNOTATED_FIELDS.get(source, _ALL_FIELDS)
+
 
 def _normalize_scalar(name: str, value) -> object:
     if name in NUMERIC_FIELDS:
@@ -89,33 +104,50 @@ def line_item_prf(pred: list[LineItem], gold: list[LineItem]) -> tuple[float, fl
 class SampleScore:
     sample_id: str
     json_valid: bool
+    # Only annotated fields appear in these dicts; line_item_* is None when the
+    # sample's source doesn't annotate line items.
     field_em: dict[str, float] = field(default_factory=dict)
     field_f1: dict[str, float] = field(default_factory=dict)
-    line_item_p: float = 0.0
-    line_item_r: float = 0.0
-    line_item_f1: float = 0.0
+    line_item_p: float | None = None
+    line_item_r: float | None = None
+    line_item_f1: float | None = None
     latency_s: float | None = None
 
 
 def score_sample(sample_id: str, pred: Extraction | None, gold: Extraction,
-                 latency_s: float | None = None) -> SampleScore:
-    """Score one prediction. pred=None (invalid JSON) scores 0 everywhere."""
+                 latency_s: float | None = None, source: str = "unknown") -> SampleScore:
+    """Score one prediction over the fields its source annotates.
+
+    pred=None (invalid JSON) scores 0 on every annotated field.
+    """
+    fields = annotated_fields(source)
+    scalar = [f for f in SCALAR_FIELDS if f in fields]
+    score_items = "line_items" in fields
     if pred is None:
         return SampleScore(
             sample_id=sample_id, json_valid=False,
-            field_em={f: 0.0 for f in SCALAR_FIELDS},
-            field_f1={f: 0.0 for f in SCALAR_FIELDS},
+            field_em={f: 0.0 for f in scalar},
+            field_f1={f: 0.0 for f in scalar},
+            line_item_p=0.0 if score_items else None,
+            line_item_r=0.0 if score_items else None,
+            line_item_f1=0.0 if score_items else None,
             latency_s=latency_s,
         )
-    em = {f: float(scalar_match(f, getattr(pred, f), getattr(gold, f))) for f in SCALAR_FIELDS}
-    f1 = {f: scalar_f1(f, getattr(pred, f), getattr(gold, f)) for f in SCALAR_FIELDS}
-    p, r, li_f1 = line_item_prf(pred.line_items, gold.line_items)
+    em = {f: float(scalar_match(f, getattr(pred, f), getattr(gold, f))) for f in scalar}
+    f1 = {f: scalar_f1(f, getattr(pred, f), getattr(gold, f)) for f in scalar}
+    p = r = li_f1 = None
+    if score_items:
+        p, r, li_f1 = line_item_prf(pred.line_items, gold.line_items)
     return SampleScore(sample_id=sample_id, json_valid=True, field_em=em, field_f1=f1,
                        line_item_p=p, line_item_r=r, line_item_f1=li_f1, latency_s=latency_s)
 
 
 def aggregate(scores: list[SampleScore]) -> dict[str, float]:
-    """Corpus-level means; every published table row is one call to this."""
+    """Corpus-level means; every published table row is one call to this.
+
+    Each field averages over the samples that annotate it, so mixed-source splits
+    stay fair; `<field>_n` records the denominator.
+    """
     if not scores:
         return {}
     n = len(scores)
@@ -123,14 +155,24 @@ def aggregate(scores: list[SampleScore]) -> dict[str, float]:
         "n_samples": float(n),
         "json_validity_rate": sum(s.json_valid for s in scores) / n,
     }
+    field_means = []
     for f in SCALAR_FIELDS:
-        out[f"{f}_em"] = sum(s.field_em.get(f, 0.0) for s in scores) / n
-        out[f"{f}_f1"] = sum(s.field_f1.get(f, 0.0) for s in scores) / n
-    out["fields_em_mean"] = sum(out[f"{f}_em"] for f in SCALAR_FIELDS) / len(SCALAR_FIELDS)
-    out["fields_f1_mean"] = sum(out[f"{f}_f1"] for f in SCALAR_FIELDS) / len(SCALAR_FIELDS)
-    out["line_item_precision"] = sum(s.line_item_p for s in scores) / n
-    out["line_item_recall"] = sum(s.line_item_r for s in scores) / n
-    out["line_item_f1"] = sum(s.line_item_f1 for s in scores) / n
+        with_f = [s for s in scores if f in s.field_em]
+        if not with_f:
+            continue
+        out[f"{f}_em"] = sum(s.field_em[f] for s in with_f) / len(with_f)
+        out[f"{f}_f1"] = sum(s.field_f1[f] for s in with_f) / len(with_f)
+        out[f"{f}_n"] = float(len(with_f))
+        field_means.append(f)
+    if field_means:
+        out["fields_em_mean"] = sum(out[f"{f}_em"] for f in field_means) / len(field_means)
+        out["fields_f1_mean"] = sum(out[f"{f}_f1"] for f in field_means) / len(field_means)
+    with_items = [s for s in scores if s.line_item_f1 is not None]
+    if with_items:
+        out["line_item_precision"] = sum(s.line_item_p for s in with_items) / len(with_items)
+        out["line_item_recall"] = sum(s.line_item_r for s in with_items) / len(with_items)
+        out["line_item_f1"] = sum(s.line_item_f1 for s in with_items) / len(with_items)
+        out["line_item_n"] = float(len(with_items))
     latencies = [s.latency_s for s in scores if s.latency_s is not None]
     if latencies:
         out["latency_mean_s"] = float(np.mean(latencies))

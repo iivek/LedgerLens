@@ -24,25 +24,35 @@ def _as_list(x) -> list:
     return x if isinstance(x, list) else [x]
 
 
+def _scalar(x):
+    """CORD stores repeated annotations as lists; take the first occurrence."""
+    if isinstance(x, list):
+        return _scalar(x[0]) if x else None
+    return x
+
+
 def _gt_to_extraction(gt_parse: dict) -> dict:
     line_items = []
     for item in _as_list(gt_parse.get("menu")):
         if not isinstance(item, dict):
             continue
+        nm = _scalar(item.get("nm"))
         line_items.append({
-            "description": item.get("nm") if isinstance(item.get("nm"), str) else None,
-            "qty": normalize_number(item.get("cnt")),
-            "unit_price": normalize_number(item.get("unitprice")),
-            "total": normalize_number(item.get("price")),
+            "description": nm if isinstance(nm, str) else None,
+            "qty": normalize_number(_scalar(item.get("cnt"))),
+            "unit_price": normalize_number(_scalar(item.get("unitprice"))),
+            "total": normalize_number(_scalar(item.get("price"))),
         })
     total_block = gt_parse.get("total") or {}
     sub_block = gt_parse.get("sub_total") or {}
-    if isinstance(sub_block, list):  # occasionally a list of blocks
+    if isinstance(total_block, list):  # occasionally a list of blocks
+        total_block = total_block[0] if total_block else {}
+    if isinstance(sub_block, list):
         sub_block = sub_block[0] if sub_block else {}
     return {
         "vendor": None, "date": None, "currency": None,
-        "total": normalize_number(total_block.get("total_price")),
-        "tax": normalize_number(sub_block.get("tax_price")),
+        "total": normalize_number(_scalar(total_block.get("total_price"))),
+        "tax": normalize_number(_scalar(sub_block.get("tax_price"))),
         "line_items": line_items,
     }
 

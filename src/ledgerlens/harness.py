@@ -39,7 +39,7 @@ def evaluate(runner: ModelRunner, samples: list[Sample], run_dir: Path,
                 raw, error = "", f"{type(e).__name__}: {e}"
             latency = time.perf_counter() - t0
             pred = parse_model_output(raw)
-            score = score_sample(s.id, pred, s.gold, latency_s=latency)
+            score = score_sample(s.id, pred, s.gold, latency_s=latency, source=s.source)
             scores.append(score)
             f.write(json.dumps({
                 "id": s.id, "source": s.source, "raw": raw, "error": error,

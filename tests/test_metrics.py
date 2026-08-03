@@ -65,3 +65,26 @@ def test_aggregate_shape():
     assert agg["json_validity_rate"] == 0.5
     assert agg["vendor_em"] == 0.5
     assert 0 < agg["fields_f1_mean"] < 1
+
+
+def test_unannotated_fields_not_penalized():
+    # SROIE annotates only vendor/date/total: a model that also (correctly!)
+    # extracts line items and currency must not lose points for it.
+    gold = Extraction(vendor="ACME", date="2024-01-01", total=10.0)  # sroie-style gold
+    pred = Extraction(vendor="ACME", date="2024-01-01", total=10.0, currency="MYR", tax=0.6,
+                      line_items=[LineItem(description="Thing", qty=1, unit_price=10, total=10)])
+    score = score_sample("s", pred, gold, source="sroie")
+    assert set(score.field_em) == {"vendor", "date", "total"}
+    assert all(v == 1.0 for v in score.field_em.values())
+    assert score.line_item_f1 is None
+    agg = aggregate([score])
+    assert agg["fields_em_mean"] == 1.0
+    assert "line_item_f1" not in agg
+    assert "currency_em" not in agg
+
+
+def test_invalid_json_zeroes_only_annotated_fields():
+    gold = Extraction(total=10.0)
+    score = score_sample("s", None, gold, source="cord")
+    assert set(score.field_em) == {"total", "tax"}
+    assert score.line_item_f1 == 0.0

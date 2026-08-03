@@ -61,8 +61,11 @@ def main() -> None:
         print(f"  {p.name:40s} {p.stat().st_size / 1e9:.2f} GB")
     print(f"\nServe locally:\n  {llama}/build/bin/llama-server -m {out}/{args.name}-q4_k_m.gguf "
           f"--mmproj {mmproj} -c 4096 --port 8080")
+    # Destination filenames are fixed by android ModelFiles.kt — do not change one side only
     print(f"Push to phone:\n  adb push {out}/{args.name}-q4_k_m.gguf "
-          f"/sdcard/Android/data/com.ledgerlens.app/files/models/ledgerlens-q4_k_m.gguf")
+          f"/sdcard/Android/data/com.ledgerlens.app/files/models/ledgerlens-q4_k_m.gguf\n"
+          f"  adb push {mmproj} "
+          f"/sdcard/Android/data/com.ledgerlens.app/files/models/mmproj-f16.gguf")
 
 
 if __name__ == "__main__":
