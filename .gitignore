@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+
+# Data & artifacts (large / licensed — never commit)
+data/raw/
+data/processed/
+data/synthetic/images/
+data/personal_holdout/
+models/
+runs/
+results/*.csv
+!results/.gitkeep
+
+# Tooling
+.DS_Store
+.idea/
+.vscode/

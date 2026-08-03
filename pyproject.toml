@@ -1,0 +1,49 @@
+[project]
+name = "ledgerlens"
+version = "0.1.0"
+description = "Offline on-device invoice & receipt extractor: VLM distillation + quantization + pruning, with a reproducible eval harness"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pydantic>=2.7",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "jinja2>=3.1",
+    "faker>=24.0",
+    "pillow>=10.0",
+    "opencv-python-headless>=4.9",
+]
+
+[project.optional-dependencies]
+# Dataset download/conversion (CORD, SROIE via HuggingFace)
+data = ["datasets>=2.19", "huggingface-hub>=0.23"]
+# HTML -> PNG rendering for the synthetic pipeline
+render = ["playwright>=1.44"]
+# GPU-side training & compression (install on the training box, not locally)
+gpu = [
+    "torch>=2.3",
+    "transformers>=4.49",
+    "accelerate>=0.30",
+    "peft>=0.11",
+    "trl>=0.9",
+    "bitsandbytes>=0.43",
+    "qwen-vl-utils>=0.0.8",
+    "autoawq>=0.2.5",
+    "torchao>=0.7",
+]
+
+[project.scripts]
+ledgerlens = "ledgerlens.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ledgerlens"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

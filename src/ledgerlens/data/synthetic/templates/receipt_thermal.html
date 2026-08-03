@@ -1,0 +1,39 @@
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #fff; }
+  .r { width: 360px; padding: 18px 14px; font-family: {{ font }}, monospace;
+       font-size: {{ font_size }}px; color: #111; }
+  .c { text-align: center; }
+  .name { font-size: {{ font_size + 4 }}px; font-weight: bold; letter-spacing: 1px; }
+  .sep { border-top: 1px dashed #333; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 1px 0; vertical-align: top; }
+  .num { text-align: right; white-space: nowrap; }
+  .tot { font-weight: bold; font-size: {{ font_size + 2 }}px; }
+  .small { font-size: {{ font_size - 2 }}px; color: #222; }
+</style>
+<div class="r">
+  <div class="c name">{{ vendor.name }}</div>
+  <div class="c small">{{ vendor.address }}</div>
+  <div class="c small">TEL {{ vendor.phone }}</div>
+  <div class="sep"></div>
+  <div class="small">{{ date_str }} {{ time_str }} &nbsp; #{{ receipt_no }}</div>
+  <div class="small">CASHIER: {{ cashier }}</div>
+  <div class="sep"></div>
+  <table>
+    {% for it in items %}
+    <tr><td colspan="2">{{ it.description }}</td></tr>
+    <tr><td class="small">&nbsp;&nbsp;{{ it.qty_str }} x {{ it.unit_price_str }}</td>
+        <td class="num">{{ it.total_str }}</td></tr>
+    {% endfor %}
+  </table>
+  <div class="sep"></div>
+  <table>
+    <tr><td>SUBTOTAL</td><td class="num">{{ subtotal_str }}</td></tr>
+    <tr><td>TAX {{ tax_rate_str }}</td><td class="num">{{ tax_str }}</td></tr>
+    <tr class="tot"><td>TOTAL {{ currency_code }}</td><td class="num tot">{{ total_str }}</td></tr>
+    <tr><td>{{ payment_method }}</td><td class="num">{{ tendered_str }}</td></tr>
+  </table>
+  <div class="sep"></div>
+  <div class="c small">{{ footer }}</div>
+</div>

@@ -1,0 +1,46 @@
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #fff; }
+  .page { width: 720px; padding: 36px 40px; font-family: {{ font }}, sans-serif;
+          font-size: {{ font_size }}px; color: #1a1a1a; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .name { font-size: {{ font_size + 10 }}px; font-weight: 700; color: {{ accent }}; }
+  .badge { font-size: {{ font_size + 6 }}px; font-weight: 300; letter-spacing: 4px; }
+  .meta { margin-top: 14px; display: flex; justify-content: space-between; }
+  .muted { color: #555; line-height: 1.5; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 22px; }
+  .items th { text-align: left; border-bottom: 2px solid {{ accent }};
+              padding: 6px 8px; font-size: {{ font_size - 1 }}px; text-transform: uppercase; }
+  .items td { border-bottom: 1px solid #ddd; padding: 7px 8px; }
+  .num { text-align: right; white-space: nowrap; }
+  .totals { margin-top: 16px; margin-left: auto; width: 260px; }
+  .totals td { padding: 4px 8px; }
+  .grand { font-weight: 700; font-size: {{ font_size + 3 }}px; border-top: 2px solid {{ accent }}; }
+  .foot { margin-top: 30px; font-size: {{ font_size - 2 }}px; color: #666; }
+</style>
+<div class="page">
+  <div class="head">
+    <div>
+      <div class="name">{{ vendor.name }}</div>
+      <div class="muted">{{ vendor.address }}<br>{{ vendor.phone }} · {{ vendor.email }}</div>
+    </div>
+    <div class="badge">INVOICE<br><span class="muted" style="font-size:{{ font_size - 1 }}px; letter-spacing:0;">No. {{ receipt_no }}</span></div>
+  </div>
+  <div class="meta">
+    <div class="muted"><b>BILL TO</b><br>{{ customer.name }}<br>{{ customer.address }}</div>
+    <div class="muted"><b>DATE</b> {{ date_str }}<br><b>DUE</b> {{ due_str }}<br><b>CURRENCY</b> {{ currency_code }}</div>
+  </div>
+  <table class="items">
+    <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr>
+    {% for it in items %}
+    <tr><td>{{ it.description }}</td><td class="num">{{ it.qty_str }}</td>
+        <td class="num">{{ it.unit_price_str }}</td><td class="num">{{ it.total_str }}</td></tr>
+    {% endfor %}
+  </table>
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="num">{{ subtotal_str }}</td></tr>
+    <tr><td>Tax ({{ tax_rate_str }})</td><td class="num">{{ tax_str }}</td></tr>
+    <tr class="grand"><td>Total</td><td class="num grand">{{ currency_symbol }}{{ total_str }}</td></tr>
+  </table>
+  <div class="foot">{{ footer }}</div>
+</div>
