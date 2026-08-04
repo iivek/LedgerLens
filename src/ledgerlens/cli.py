@@ -42,6 +42,9 @@ def _cmd_convert(args: argparse.Namespace) -> None:
     elif args.dataset == "sroie":
         from .data.sroie import convert_sroie
         convert_sroie(out)
+    elif args.dataset == "personal":
+        from .data.personal import convert_personal
+        convert_personal(out)
     else:
         raise SystemExit(f"unknown dataset {args.dataset}")
 
@@ -69,7 +72,7 @@ def main() -> None:
     p_eval.set_defaults(func=_cmd_eval)
 
     p_conv = sub.add_parser("convert", help="convert a public dataset to the unified format")
-    p_conv.add_argument("dataset", choices=["cord", "sroie"])
+    p_conv.add_argument("dataset", choices=["cord", "sroie", "personal"])
     p_conv.add_argument("--out", default="data/processed")
     p_conv.set_defaults(func=_cmd_convert)
 

@@ -78,6 +78,8 @@ The synthetic generator renders Jinja2 HTML templates (thermal receipt + A4 invo
 
 CORD and SROIE are **research-use** datasets; model weights trained on them are labeled accordingly. See [DATA_LICENSES.md](DATA_LICENSES.md) for exact terms — CORD is confirmed CC-BY-4.0, SROIE's dataset-level license could not be independently verified and is treated as research-use only pending confirmation from the ICDAR/RRC organizers.
 
+**Personal holdout** (spec §4 — the honest "does it actually work" set, ~50 real receipts, never trained on): drop photos in `data/personal_holdout/raw/`, run `uv run ledgerlens convert personal` once to scaffold a blank label JSON per photo in `data/personal_holdout/labels/` (matching the `Extraction` schema), hand-fill each with what the receipt actually says, then rerun the same command to build `data/personal_holdout.jsonl`. A typo'd field name fails loudly (not silently null) since these are hand-typed. Never committed (`data/personal_holdout/` is gitignored); redact or exclude before publishing anything derived from it.
+
 ## Training & compression (GPU box, 24 GB)
 
 ```sh
