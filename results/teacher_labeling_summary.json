@@ -1,0 +1,19 @@
+{
+  "description": "Provenance summary for the Weekend-2 teacher-labeling pass (Qwen2.5-VL-7B-Instruct, 4-bit) over the full CORD+SROIE train splits. The actual per-sample labeled data lives in data/distill/*.jsonl (gitignored, regenerable via scripts/teacher_label.py) -- this file is the small, tracked record of how well that pass went, analogous to results/results.csv for eval runs.",
+  "teacher": "Qwen/Qwen2.5-VL-7B-Instruct",
+  "load_in_4bit": true,
+  "compute": "Kaggle free-tier NvidiaTeslaT4, chunked across 8 kernel runs (~200 samples each) to fit the per-session runtime cap",
+  "date": "2026-08-04",
+  "sources": {
+    "cord_train": {"n": 800, "valid_json": 774, "valid_json_pct": 96.8, "agrees_with_gold_on_total": 707, "agrees_pct": 88.4, "mean_latency_s": 31.3},
+    "sroie_train": {"n": 626, "valid_json": 614, "valid_json_pct": 98.1, "agrees_with_gold_on_total": 607, "agrees_pct": 97.0, "mean_latency_s": 37.4}
+  },
+  "overall": {"n": 1426, "valid_json": 1388, "valid_json_pct": 97.3, "agrees_with_gold_on_total": 1314, "agrees_pct": 92.1},
+  "integrity_checks": {"unique_ids": 1426, "duplicates": 0, "matches_source_split_counts": true},
+  "known_failure_modes_observed": [
+    "one 22-line-item receipt produced truncated/invalid JSON, likely hitting the 512-token generation cap",
+    "at least one currency/magnitude error: a Thai receipt total misread as '40' instead of '40,000' (correct currency, 1000x scale error)",
+    "at least two observed cases of tax vs. subtotal confusion"
+  ],
+  "caveat": "agrees_with_gold_on_total is a cheap single-field proxy for teacher correctness (per scripts/teacher_label.py). It does not verify vendor, date, currency, or line_items independently -- an agreeing total does not guarantee the rest of the extraction is correct. This is exactly why the SFT blend-policy ablation (gold vs teacher vs teacher-agree) exists as a research question, not an assumption."
+}
