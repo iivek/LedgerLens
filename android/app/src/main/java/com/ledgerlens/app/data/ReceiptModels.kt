@@ -53,16 +53,47 @@ object ReceiptParser {
             text = text.removeSuffix("```").trimEnd()
         }
 
-        // Fall back to the outermost brace pair to shed any remaining prose.
-        val start = text.indexOf('{')
-        val end = text.lastIndexOf('}')
-        if (start == -1 || end <= start) return null
-
+        val jsonText = firstJsonObject(text) ?: return null
         return try {
-            json.decodeFromString<Receipt>(text.substring(start, end + 1))
+            json.decodeFromString<Receipt>(jsonText)
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Extracts the first balanced top-level `{...}` object, tracking string
+     * literals so braces inside quoted values (e.g. an address field) don't
+     * throw off the match, and stopping at the first balanced close rather
+     * than grabbing everything up to the *last* `}` in the text (which would
+     * swallow trailing prose containing its own brace, e.g. a URL fragment).
+     * Mirrors `_first_json_object` in src/ledgerlens/schema.py -- the two
+     * parsers should treat identical model output identically.
+     */
+    private fun firstJsonObject(text: String): String? {
+        val start = text.indexOf('{')
+        if (start == -1) return null
+        var depth = 0
+        var inString = false
+        var escape = false
+        for (i in start until text.length) {
+            val c = text[i]
+            if (inString) {
+                when {
+                    escape -> escape = false
+                    c == '\\' -> escape = true
+                    c == '"' -> inString = false
+                }
+            } else when (c) {
+                '"' -> inString = true
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return text.substring(start, i + 1)
+                }
+            }
+        }
+        return null
     }
 
     fun pretty(receipt: Receipt): String = prettyJson.encodeToString(receipt)

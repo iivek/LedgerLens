@@ -58,14 +58,21 @@ class ExtractionRepository {
     }
 
     /**
-     * Best-effort synchronous unload for ViewModel.onCleared(). Skips the mutex:
-     * only call when no other work can be in flight (scope already cancelled).
+     * Fire-and-forget unload for ViewModel.onCleared(), which Android calls
+     * synchronously on the main thread. Native `unload()` blocks on the same
+     * C++-side mutex `extract()` holds for its entire run, so calling it
+     * directly here would freeze the UI thread for as long as an in-flight
+     * extraction has left to run (worst case tens of seconds per our own
+     * latency measurements) -- a real ANR, not a rare edge case, if the user
+     * backs out mid-inference. Runs on a plain daemon thread instead: no
+     * coroutine scope survives onCleared() to launch one properly, and
+     * cleanup finishing a moment after the screen is gone is harmless.
      */
     fun unloadBlocking() {
         val h = handle
         if (h != 0L) {
             handle = 0L
-            LlamaBridge.unload(h)
+            Thread({ LlamaBridge.unload(h) }, "ledgerlens-unload").apply { isDaemon = true }.start()
         }
     }
 
