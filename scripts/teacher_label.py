@@ -34,10 +34,12 @@ def main() -> None:
     # BooleanOptionalAction so --no-load-in-4bit can actually override the
     # default (plain store_true+default=True can never be turned off from the CLI)
     ap.add_argument("--load-in-4bit", action=argparse.BooleanOptionalAction, default=True)
-    ap.add_argument("--limit", type=int)
+    ap.add_argument("--offset", type=int, default=0, help="skip the first N samples (chunking across sessions)")
+    ap.add_argument("--limit", type=int, help="label at most N samples after --offset")
     args = ap.parse_args()
 
     samples = load_split(args.split)
+    samples = samples[args.offset :]
     if args.limit:
         samples = samples[: args.limit]
     runner = get_runner("hf", model_id=args.teacher, load_in_4bit=args.load_in_4bit)
@@ -66,8 +68,9 @@ def main() -> None:
                 "teacher_agrees_total": agrees,
                 "latency_s": round(time.perf_counter() - t0, 3),
             }, ensure_ascii=False) + "\n")
+            f.flush()
             if (i + 1) % 25 == 0:
-                print(f"[{i + 1}/{len(samples)}] valid={n_valid} agree_total={n_agree}")
+                print(f"[{i + 1}/{len(samples)}] valid={n_valid} agree_total={n_agree}", flush=True)
     print(f"done: {len(samples)} samples, {n_valid} valid JSON, {n_agree} agree on total -> {out_path}")
 
 

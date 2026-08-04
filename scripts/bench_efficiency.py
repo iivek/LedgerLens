@@ -41,13 +41,29 @@ def _row(tag: str, host: str, **kw) -> None:
     print("\n".join(f"{k}: {v}" for k, v in row.items()))
 
 
+def parse_tok_s(stderr_text: str) -> float | None:
+    """llama.cpp timing line: "eval time = ... ms / N tokens ( ... ms per token, X tokens per second)"."""
+    m = re.findall(r"([\d.]+)\s+tokens per second", stderr_text)
+    return float(m[-1]) if m else None
+
+
+def parse_peak_ram_gb(stderr_text: str, is_darwin: bool) -> float | None:
+    """Peak RSS from `/usr/bin/time -l` (macOS, bytes) or `-v` (Linux, kbytes)."""
+    if is_darwin:
+        m = re.search(r"(\d+)\s+maximum resident set size", stderr_text)
+        return int(m.group(1)) / 1e9 if m else None
+    m = re.search(r"Maximum resident set size \(kbytes\): (\d+)", stderr_text)
+    return int(m.group(1)) * 1024 / 1e9 if m else None
+
+
 def bench_gguf(args: argparse.Namespace) -> None:
     size_gb = Path(args.model).stat().st_size / 1e9
     mmproj_gb = Path(args.mmproj).stat().st_size / 1e9
     cli = args.cli or "llama-mtmd-cli"
     base = [cli, "-m", args.model, "--mmproj", args.mmproj, "--image", args.image,
             "-p", PROMPT, "-n", str(args.max_tokens), "--temp", "0"]
-    time_cmd = ["/usr/bin/time", "-l"] if platform.system() == "Darwin" else ["/usr/bin/time", "-v"]
+    is_darwin = platform.system() == "Darwin"
+    time_cmd = ["/usr/bin/time", "-l"] if is_darwin else ["/usr/bin/time", "-v"]
 
     runs = []
     peak_ram_gb = None
@@ -56,19 +72,10 @@ def bench_gguf(args: argparse.Namespace) -> None:
         proc = subprocess.run(time_cmd + base, capture_output=True, text=True)
         e2e = time.perf_counter() - t0
         err = proc.stderr
-        # llama.cpp timing line: "eval time = ... ms / N tokens ( ... ms per token, X tokens per second)"
-        tok_s = None
-        m = re.findall(r"([\d.]+)\s+tokens per second", err)
-        if m:
-            tok_s = float(m[-1])
-        if platform.system() == "Darwin":
-            mm = re.search(r"(\d+)\s+maximum resident set size", err)
-            if mm:
-                peak_ram_gb = int(mm.group(1)) / 1e9  # bytes on macOS
-        else:
-            mm = re.search(r"Maximum resident set size \(kbytes\): (\d+)", err)
-            if mm:
-                peak_ram_gb = int(mm.group(1)) * 1024 / 1e9
+        tok_s = parse_tok_s(err)
+        ram = parse_peak_ram_gb(err, is_darwin)
+        if ram is not None:
+            peak_ram_gb = ram
         runs.append((e2e, tok_s))
         print(f"run {i + 1}/{args.repeats}: e2e={e2e:.2f}s tok/s={tok_s}")
 
