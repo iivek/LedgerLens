@@ -66,3 +66,40 @@ def test_runner_exception_counts_as_invalid(tmp_path):
     row = run_eval(Boom(), split, tag="boom", host="test",
                    runs_root=tmp_path / "runs", results_csv=tmp_path / "results.csv")
     assert float(row["json_validity_rate"]) == 0.0
+
+
+def test_rerunning_same_tag_replaces_not_duplicates(tmp_path):
+    split = _make_split(tmp_path)
+    samples = load_split(split)
+    gold_map = {str(s.image): s.gold.model_dump() for s in samples}
+    csv_path = tmp_path / "results.csv"
+    run_eval(MockRunner(gold_by_image=gold_map, invalid_json_rate=1.0), split, tag="rerun-me",
+             host="test", runs_root=tmp_path / "runs", results_csv=csv_path)
+    run_eval(MockRunner(gold_by_image=gold_map), split, tag="rerun-me",
+             host="test", runs_root=tmp_path / "runs", results_csv=csv_path)
+    rows = list(csv.DictReader(open(csv_path)))
+    assert len(rows) == 1  # not 2 -- the rerun replaced the old row, didn't duplicate
+    assert float(rows[0]["json_validity_rate"]) == 1.0  # reflects the SECOND (current) run
+
+
+def test_failed_request_latency_excluded_from_aggregate(tmp_path):
+    split = _make_split(tmp_path)
+
+    class SlowThenFail:
+        name = "slow-fail"
+        def __init__(self):
+            self.calls = 0
+        def generate(self, image_path, prompt):
+            import time
+            self.calls += 1
+            if self.calls == 1:
+                time.sleep(0.2)  # simulate a slow call that then fails/times out
+                raise RuntimeError("timeout")
+            return '{"total": 1.0}'
+
+    row = run_eval(SlowThenFail(), split, tag="slow-fail", host="test",
+                   runs_root=tmp_path / "runs", results_csv=tmp_path / "results.csv")
+    # only the one successful call's latency should count toward the mean --
+    # if the failed call's ~0.2s were included, mean would be much higher
+    # relative to a single fast successful call
+    assert float(row["latency_mean_s"]) < 0.1

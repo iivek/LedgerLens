@@ -39,7 +39,13 @@ def evaluate(runner: ModelRunner, samples: list[Sample], run_dir: Path,
                 raw, error = "", f"{type(e).__name__}: {e}"
             latency = time.perf_counter() - t0
             pred = parse_model_output(raw)
-            score = score_sample(s.id, pred, s.gold, latency_s=latency, source=s.source)
+            # A failed call's elapsed time (up to the runner's full timeout --
+            # 600s for LlamaCppRunner) is not a real inference latency; feeding
+            # it into aggregate() would silently inflate p95/mean from a single
+            # timeout. Excluded from scoring (score_sample.latency_s=None skips
+            # it in aggregate's mean/percentiles) but still written to the raw
+            # per-sample log below for debugging.
+            score = score_sample(s.id, pred, s.gold, latency_s=None if error else latency, source=s.source)
             scores.append(score)
             f.write(json.dumps({
                 "id": s.id, "source": s.source, "raw": raw, "error": error,
@@ -52,13 +58,18 @@ def evaluate(runner: ModelRunner, samples: list[Sample], run_dir: Path,
 
 
 def append_results_csv(csv_path: Path, row: dict) -> None:
-    """Append one aggregate row, growing the header union if new columns appear."""
+    """Upsert one aggregate row by tag, growing the header union if new columns appear.
+
+    Re-running the same tag replaces its row in place rather than appending a
+    duplicate -- a duplicate tag would silently break any downstream join on
+    tag (e.g. against efficiency.csv) with no indication which row is current.
+    """
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     existing_rows: list[dict] = []
     if csv_path.exists():
         with open(csv_path, newline="") as f:
             existing_rows = list(csv.DictReader(f))
-    all_rows = existing_rows + [row]
+    all_rows = [r for r in existing_rows if r.get("tag") != row.get("tag")] + [row]
     cols = list(dict.fromkeys(
         AGGREGATE_COLUMNS_FIRST
         + [c for r in all_rows for c in r.keys() if c not in AGGREGATE_COLUMNS_FIRST]
