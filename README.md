@@ -8,16 +8,24 @@
 
 Measured on this repo's own eval harness, running the deployment runtime (llama.cpp, this exact GGUF) locally on a MacBook M1 Pro — not a rented GPU, not the phone yet. `fields_em_mean` averages only the fields each dataset actually annotates (SROIE: vendor/date/total; CORD: total/tax/line-items — see [CLAUDE.md](CLAUDE.md) on why).
 
-| Variant | Split (n) | JSON valid | Field EM (mean) | Line-item F1 | Latency p50 / mean |
-|---|---|---|---|---|---|
-| Q4_K_M (940 MB) | SROIE (347) | 96.0% | 86.6% | — | 13.6s / 17.0s |
-| Q4_K_M (940 MB) | CORD (100) | 98.0% | 60.0% | 76.0% | 8.9s / 13.7s |
-| Q8_0 (1.5 GB) | SROIE (347) | 95.7% | 84.8% | — | 13.7s / 18.5s |
-| Q8_0 (1.5 GB) | CORD (100) | 98.0% | 63.5% | 74.7% | 10.3s / 15.9s |
+*(Rescored — see `scripts/rescore.py` — after two metric bugs were found and fixed: a line-item null-handling bug that understated line-item F1 by ~9-10pp, and a date-normalization gap that let the model's non-ISO output coincidentally match SROIE gold's own non-canonical fallback text, inflating date accuracy. Original numbers are still in `results/results.csv` under the non-`-rescored` tags for the audit trail.)*
 
-**Early read:** the stock 2B model is already a strong baseline — SROIE mean field exact-match in the mid-80s with no fine-tuning at all. Q8_0 is *not* meaningfully more accurate than Q4_K_M here (within noise, arguably slightly lower on SROIE) despite being 60% larger and slower — an early hint of diminishing PTQ returns worth checking against the AWQ/GPTQ grid later. CORD scores lower because it's a harder distribution (worse for zero-shot vendor/date-free extraction, richer line-item structure). Per the spec's contingency: if distillation doesn't clearly beat this stock baseline, the story pivots to "how small can we go," not "look how much we improved."
+| Variant | Split (n) | JSON valid | Field EM (mean) | Vendor / Date / Total EM (SROIE) | Line-item F1 | Latency p50 / mean |
+|---|---|---|---|---|---|---|
+| Q4_K_M (940 MB) | SROIE (347) | 96.0% | 77.3% | 81.8% / 59.9% / 90.2% | — | 13.6s / 17.0s |
+| Q4_K_M (940 MB) | CORD (100) | 98.0% | 60.0% | — | 86.0% | 8.9s / 13.7s |
+| Q8_0 (1.5 GB) | SROIE (347) | 95.7% | 77.9% | 82.4% / 63.1% / 88.2% | — | 13.7s / 18.5s |
+| Q8_0 (1.5 GB) | CORD (100) | 98.0% | 63.5% | — | 83.7% | 10.3s / 15.9s |
 
-None of this involves the teacher (Qwen2.5-VL-7B), SFT, PTQ/QAT beyond stock GGUF quantization, or pruning yet — those are Weekends 2–3.
+**Honest read, not a one-sided one:** Q8_0 is not more accurate than Q4_K_M in any way that survives scrutiny — and it isn't uniformly *worse* either. Per-field, the two trade places: Q8 leads on CORD total EM (+7pp) and SROIE vendor EM (+0.6pp); Q4 leads on SROIE date EM (+3.2pp) and SROIE total EM (+2pp). A real quantization effect shouldn't flip direction between datasets — this pattern is consistent with sampling noise at this sample size (SROIE n=347, CORD n=100; a single unpaired run each), not a "diminishing returns" finding. Treat it as unresolved, not as evidence, until it's checked with paired significance tests and repeated runs.
+
+Date EM is the field most worth reading carefully: after the metric fix, it's the clear accuracy floor (~60-63%) despite total EM staying high (~88-90%) — largely because the model rarely follows the prompt's requested `YYYY-MM-DD` format even when it reads the date correctly, and the corrected metric no longer gives credit for that.
+
+CORD scores lower on tax/total than SROIE's headline fields because it's a harder distribution (richer line-item structure, no vendor/date/currency annotated at all). Per the spec's contingency: if distillation doesn't clearly beat this stock baseline, the story pivots to "how small can we go," not "look how much we improved."
+
+None of this involves the teacher (Qwen2.5-VL-7B), SFT, PTQ/QAT beyond stock GGUF quantization, or pruning yet — those are Weekends 2–3. **The vision tower (mmproj, 1.33 GB) has not been quantized in either variant above and is larger than the 4-bit LLM (0.99 GB)** — the 940MB/1.5GB figures describe the LLM only; deployed footprint including mmproj is 2.32 GB (Q4) vs 2.98 GB (Q8), a much smaller ratio than the LLM-only numbers suggest. This is also the leading candidate explanation for why LLM-only quantization shows so little effect above.
+
+**On latency vs. the spec's "~1-2 seconds on a phone" target:** these numbers (13-18s mean, up to 40-49s p95) are already far above that, and they're on a **GPU-accelerated M1 Pro** — the current Android JNI code runs **CPU-only**. A mid-range Android phone's CPU is meaningfully slower than an M1 Pro's GPU, so on-device latency today is very likely in the tens of seconds to low minutes, not 1-2 seconds. The compression plan as designed (int4 LLM + pruning) targets a ~1.5-2x speedup, which does not close a gap of this size — most of the latency is plausibly vision-token prefill (the mmproj is unquantized and image-token budget isn't yet a compression axis). The 1-2s target needs to be either restated honestly or the plan needs to add image-resolution/token-budget reduction and GPU delegation as explicit levers, before this claim goes in front of anyone evaluating compression work.
 
 ## Architecture
 
