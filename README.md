@@ -23,6 +23,19 @@ Date EM is the field most worth reading carefully: after the metric fix, it's th
 
 CORD scores lower on tax/total than SROIE's headline fields because it's a harder distribution (richer line-item structure, no vendor/date/currency annotated at all). Per the spec's contingency: if distillation doesn't clearly beat this stock baseline, the story pivots to "how small can we go," not "look how much we improved."
 
+### SROIE train/test overlap — vendor-disjoint numbers
+
+The Kaggle SROIE mirror (`urbikn/sroie-datasetv2`) is a re-split of the same underlying 973 receipts, not the official ICDAR test set. Checked directly against the current data: **7/347 test images are byte-identical to a training image** (left as-is — 2% of the split, not worth the churn to hunt down and relabel by hand), and **72.6% of test receipts share a vendor string with a training receipt** (252/347). Vendor overlap is the one worth correcting for, since it can inflate vendor accuracy independent of whether the model can actually read a receipt it hasn't seen the store's layout for before.
+
+`scripts/rescore.py --vendor-disjoint-against <train-split>` restricts scoring to the 95 test receipts whose vendor does *not* appear in `sroie_train` — no re-running the model, just re-scoring the existing predictions:
+
+| Variant | Vendor EM (full test, n=347) | Vendor EM (vendor-disjoint, n=95) | Date EM (disjoint) | Total EM (disjoint) |
+|---|---|---|---|---|
+| Q4_K_M | 81.8% | **61.1%** | 56.8% | 90.5% |
+| Q8_0 | 82.4% | **62.1%** | 57.9% | 88.4% |
+
+A 20-point gap. Important nuance: **this is the stock, zero-fine-tuned model** — it has never trained on any SROIE data, so this isn't training-set memorization in the usual sense. The more likely explanation is that vendors repeating across train/test tend to be larger, more common chains, and the model's own general-purpose pretraining gives it an edge recognizing familiar branding — an edge that doesn't extend to rarer, less-common vendors. Either way, the full-test vendor number is not a reliable estimate of performance on a vendor the model hasn't effectively seen before, whatever the cause. **This check becomes essential once real fine-tuning happens on `sroie_train`** — at that point the same gap could additionally reflect genuine training-set memorization, and vendor-disjoint scoring is how that gets caught rather than published as a clean win.
+
 None of this involves the teacher (Qwen2.5-VL-7B), SFT, PTQ/QAT beyond stock GGUF quantization, or pruning yet — those are Weekends 2–3. **The vision tower (mmproj, 1.33 GB) has not been quantized in either variant above and is larger than the 4-bit LLM (0.99 GB)** — the 940MB/1.5GB figures describe the LLM only; deployed footprint including mmproj is 2.32 GB (Q4) vs 2.98 GB (Q8), a much smaller ratio than the LLM-only numbers suggest. This is also the leading candidate explanation for why LLM-only quantization shows so little effect above.
 
 **On latency vs. the spec's "~1-2 seconds on a phone" target:** these numbers (13-18s mean, up to 40-49s p95) are already far above that, and they're on a **GPU-accelerated M1 Pro** — the current Android JNI code runs **CPU-only**. A mid-range Android phone's CPU is meaningfully slower than an M1 Pro's GPU, so on-device latency today is very likely in the tens of seconds to low minutes, not 1-2 seconds. The compression plan as designed (int4 LLM + pruning) targets a ~1.5-2x speedup, which does not close a gap of this size — most of the latency is plausibly vision-token prefill (the mmproj is unquantized and image-token budget isn't yet a compression axis). The 1-2s target needs to be either restated honestly or the plan needs to add image-resolution/token-budget reduction and GPU delegation as explicit levers, before this claim goes in front of anyone evaluating compression work.
