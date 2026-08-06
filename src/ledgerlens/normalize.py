@@ -33,6 +33,11 @@ _DATE_FORMATS_UNAMBIGUOUS = (
     "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
     "%d %B %Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y",
     "%Y%m%d",
+    # Month-name variants are unambiguous regardless of D/M ordering conventions
+    # (a named month removes the question entirely) -- seen in real SROIE OCR
+    # output ("24-MAR-2018", "02/JAN/2017", "28 MAR 18").
+    "%d-%b-%Y", "%d/%b/%Y", "%d-%B-%Y", "%d/%B/%Y",
+    "%d %b %y", "%d-%b-%y", "%d/%b/%y",
 )
 # Numeric little/middle-endian formats: only safe when one of day/month > 12
 _DATE_FORMATS_DMY = ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%y", "%d/%m/%y", "%d.%m.%y")
@@ -86,8 +91,22 @@ def normalize_number(value: str | float | int | None) -> float | None:
     return -result if negative else result
 
 
-def normalize_date(value: str | None) -> str | None:
-    """Canonicalize to YYYY-MM-DD when unambiguous; otherwise return cleaned raw string."""
+def normalize_date(value: str | None, prefer_dmy: bool = False) -> str | None:
+    """Canonicalize to YYYY-MM-DD when unambiguous; otherwise return cleaned raw string.
+
+    By default, a numeric date where both D/M and M/D readings are valid
+    (e.g. "03/04/2024") is left as raw text rather than guessed — the general
+    case spans mixed-locale data (synthetic invoices, personal holdout) where
+    guessing wrong is worse than declining to match.
+
+    prefer_dmy=True resolves that same ambiguous case to the D/M reading
+    instead of falling back to raw text. Only use this where the data source
+    justifies a locale prior — e.g. SROIE (Malaysian receipts) is 503:3
+    unambiguous-DMY:unambiguous-MDY in its raw dates, so DMY is the right
+    default for the ~35% of its dates that are numeric-ambiguous. Using this
+    generally would reintroduce the guessing risk this function exists to
+    avoid; it's deliberately not the default.
+    """
     if value is None:
         return None
     v = value.strip()
@@ -100,7 +119,7 @@ def normalize_date(value: str | None) -> str | None:
     dmy = _try_formats(v, _DATE_FORMATS_DMY)
     mdy = _try_formats(v, _DATE_FORMATS_MDY)
     if dmy and mdy and dmy != mdy:
-        return normalize_text(v)  # ambiguous — don't guess
+        return dmy if prefer_dmy else normalize_text(v)  # ambiguous — don't guess unless told to
     if dmy or mdy:
         return dmy or mdy
     return normalize_text(v)

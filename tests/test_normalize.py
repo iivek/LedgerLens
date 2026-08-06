@@ -44,6 +44,21 @@ def test_date_ambiguous_not_guessed():
     assert normalize_date("03/04/2024") == "03/04/2024"
 
 
+def test_date_prefer_dmy_resolves_ambiguous_case():
+    assert normalize_date("03/04/2024", prefer_dmy=True) == "2024-04-03"
+
+
+def test_date_prefer_dmy_does_not_affect_unambiguous_cases():
+    assert normalize_date("25/12/2018", prefer_dmy=True) == "2018-12-25"
+    assert normalize_date("12/25/2018", prefer_dmy=True) == "2018-12-25"
+
+
+def test_date_month_name_dash_and_slash_variants():
+    assert normalize_date("24-MAR-2018") == "2018-03-24"
+    assert normalize_date("02/JAN/2017") == "2017-01-02"
+    assert normalize_date("28 MAR 18") == "2018-03-28"
+
+
 def test_currency():
     assert normalize_currency("$") == "USD"
     assert normalize_currency("Rp") == "IDR"

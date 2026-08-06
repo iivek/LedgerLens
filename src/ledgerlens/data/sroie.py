@@ -19,7 +19,7 @@ import json
 import shutil
 from pathlib import Path
 
-from ..normalize import normalize_number
+from ..normalize import normalize_date, normalize_number
 from .unified import write_split
 
 DEFAULT_RAW = Path("data/raw/SROIE2019")
@@ -54,7 +54,16 @@ def convert_sroie(out_dir: Path, raw_dir: Path = DEFAULT_RAW) -> None:
                 "source": "sroie",
                 "gold": {
                     "vendor": ent.get("company"),
-                    "date": ent.get("date"),
+                    # SROIE dates are Malaysian receipts (overwhelmingly D/M/Y:
+                    # 503:3 unambiguous-DMY:unambiguous-MDY in the raw data),
+                    # so ambiguous numeric dates ("03/04/2024") are resolved
+                    # DMY here rather than left as an un-normalizable raw
+                    # string. Without this, gold falls back to raw text for
+                    # ~35% of SROIE dates, which can never match a model
+                    # trained (via distillation) to emit the ISO format the
+                    # prompt actually asks for -- a real, structural date-EM
+                    # ceiling that has nothing to do with reading accuracy.
+                    "date": normalize_date(ent.get("date"), prefer_dmy=True),
                     "currency": None,
                     "total": normalize_number(ent.get("total")),
                     "tax": None,

@@ -88,3 +88,30 @@ def test_invalid_json_zeroes_only_annotated_fields():
     score = score_sample("s", None, gold, source="cord")
     assert set(score.field_em) == {"total", "tax"}
     assert score.line_item_f1 == 0.0
+
+
+def test_line_item_gold_null_numeric_not_penalized():
+    # CORD-style gold: unit_price frequently unannotated. A model that
+    # correctly extracts it anyway must not be scored as wrong for it.
+    gold_item = LineItem(description="Coffee", qty=None, unit_price=None, total=7.0)
+    pred_item = LineItem(description="Coffee", qty=2, unit_price=3.5, total=7.0)
+    p, r, f1 = line_item_prf([pred_item], [gold_item])
+    assert (p, r, f1) == (1.0, 1.0, 1.0)
+
+
+def test_line_item_gold_present_pred_missing_still_penalized():
+    # The fix must not become "gold-null skips everything" -- when gold DOES
+    # have a value and the model fails to extract it, that's still wrong.
+    gold_item = LineItem(description="Coffee", qty=2, unit_price=3.5, total=7.0)
+    pred_item = LineItem(description="Coffee", qty=None, unit_price=None, total=7.0)
+    p, r, f1 = line_item_prf([pred_item], [gold_item])
+    # total matches, qty/unit_price both wrong -> similarity < 1 but still a match
+    assert p == 1.0 and r == 1.0 and f1 == 1.0  # matched (similarity >= threshold)
+
+
+def test_line_item_gold_present_pred_wrong_value_penalized():
+    gold_item = LineItem(description="Coffee", qty=2, unit_price=3.5, total=7.0)
+    pred_item = LineItem(description="Coffee", qty=99, unit_price=3.5, total=7.0)
+    from ledgerlens.metrics import _line_item_similarity
+    sim = _line_item_similarity(pred_item, gold_item)
+    assert sim < 1.0  # qty wrong should still cost something

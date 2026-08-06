@@ -76,13 +76,25 @@ def scalar_f1(name: str, pred, gold) -> float:
 
 
 def _line_item_similarity(p: LineItem, g: LineItem) -> float:
-    """Mean of description token-F1 and numeric agreement on (qty, unit_price, total)."""
+    """Mean of description token-F1 and numeric agreement on (qty, unit_price, total).
+
+    Gold null on a numeric attribute means "unannotated" (CORD's line items
+    frequently lack unit_price/qty in the source data), not "this line item
+    has no such value" -- the same unannotated-vs-wrong distinction already
+    applied to top-level fields via ANNOTATED_FIELDS. A gold-null attribute is
+    skipped regardless of what the model predicted, so a correct extraction of
+    a field the annotator simply didn't record isn't scored as wrong. A model
+    that fails to extract an attribute gold DOES have is still scored 0.0.
+    Verified against real predictions.jsonl: this was previously understating
+    line-item F1 by ~9-10pp on CORD, where unit_price is null in ~73% of gold
+    line items.
+    """
     parts = [_token_f1(p.description, g.description)]
     for attr in ("qty", "unit_price", "total"):
         pv, gv = normalize_number(getattr(p, attr)), normalize_number(getattr(g, attr))
-        if pv is None and gv is None:
-            continue  # both absent: uninformative, don't inflate
-        parts.append(1.0 if (pv is not None and gv is not None and abs(pv - gv) <= NUMERIC_TOLERANCE) else 0.0)
+        if gv is None:
+            continue  # unannotated in gold: uninformative, don't penalize either way
+        parts.append(1.0 if (pv is not None and abs(pv - gv) <= NUMERIC_TOLERANCE) else 0.0)
     return sum(parts) / len(parts)
 
 
