@@ -29,6 +29,23 @@ class Extraction(BaseModel):
     line_items: list[LineItem] = []
 
 
+# Canonical generation/image-preprocessing config -- the single source every
+# Python code path (hf_vlm.py, llamacpp.py, train_sft.py, prune.py) and the
+# Android app should match. Previously these diverged silently: the harness
+# capped generation at 512 tokens while Android used 1024 (part of why a
+# 22-line-item CORD receipt truncated during teacher labeling), and
+# min/max_pixels varied between eval (1280*28*28), training (1024*28*28),
+# and pruning (uncapped/library default) -- three different effective image
+# resolutions across stages that were never actually a controlled comparison.
+# CHANGE NOTE: Weekend-1 stock baselines (results.csv tags without
+# "-rescored") were measured under the OLD 512-token cap, before this was
+# unified to 1024 to match Android. Not retroactively changed; flagged here
+# so a future reader knows why an old row's config differs from a new one.
+MAX_NEW_TOKENS = 1024
+MIN_PIXELS = 256 * 28 * 28
+MAX_PIXELS = 1280 * 28 * 28
+
+
 # Scalar fields scored individually by the harness (line_items scored separately).
 SCALAR_FIELDS = ("vendor", "date", "currency", "total", "tax")
 NUMERIC_FIELDS = ("total", "tax")

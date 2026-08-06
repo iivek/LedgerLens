@@ -37,15 +37,25 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).parent.parent / "src"))
+
     import torch
     import torch.nn.functional as F
     from qwen_vl_utils import process_vision_info
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
+    from ledgerlens.schema import MAX_PIXELS, MIN_PIXELS
+
+    # T4 (Turing, sm_75) has no bf16 support -- same fix as train_sft.py/
+    # qat_torchao.py, missed here in an earlier pass. Also missing here
+    # originally: min/max_pixels, which left this on whichever default the
+    # library ships, diverging from every other stage's pixel budget.
     model = AutoModelForImageTextToText.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, device_map="auto"
+        args.model, torch_dtype=torch.float16, device_map="auto"
     )
-    processor = AutoProcessor.from_pretrained(args.model)
+    processor = AutoProcessor.from_pretrained(args.model, min_pixels=MIN_PIXELS, max_pixels=MAX_PIXELS)
     llm = model.model.language_model  # Qwen2-VL: text decoder stack
     layers = llm.layers
     n_layers = len(layers)

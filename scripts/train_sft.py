@@ -40,7 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ledgerlens.metrics import annotated_fields, line_item_prf, scalar_match  # noqa: E402
-from ledgerlens.schema import SCALAR_FIELDS, LineItem  # noqa: E402
+from ledgerlens.schema import MAX_PIXELS, MIN_PIXELS, SCALAR_FIELDS, LineItem  # noqa: E402
 
 STUDENT_DEFAULT = "Qwen/Qwen2-VL-2B-Instruct"
 LINE_ITEM_AGREE_F1 = 0.7  # threshold for "teacher's line items agree with gold" in teacher-agree
@@ -175,8 +175,15 @@ def main() -> None:
               for path in args.data for line in open(path)]
     print(f"{len(records)} training samples (policy={args.policy})")
 
+    # Matches the eval-time pixel budget (hf_vlm.py/llamacpp deployment) so
+    # training and evaluation see the same effective image resolution --
+    # previously this used a smaller max_pixels (1024*28*28 vs eval's
+    # 1280*28*28) with no documented reason, an unacknowledged train/eval
+    # resolution mismatch. If this OOMs on the T4, lower it here deliberately
+    # (and note it in results.csv's host/config) rather than let it silently
+    # drift from what evaluation actually measures.
     processor = AutoProcessor.from_pretrained(
-        args.student, min_pixels=256 * 28 * 28, max_pixels=1024 * 28 * 28
+        args.student, min_pixels=MIN_PIXELS, max_pixels=MAX_PIXELS
     )
     # T4 (Turing, sm_75) has no bf16 support -- TrainingArguments hard-fails at
     # init and model loading silently mis-casts under bf16 on this hardware.

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..schema import MAX_NEW_TOKENS, MAX_PIXELS, MIN_PIXELS
+
 
 class HFVLMRunner:
-    def __init__(self, model_id: str, max_new_tokens: int = 512,
+    def __init__(self, model_id: str, max_new_tokens: int = MAX_NEW_TOKENS,
                  device_map: str = "auto", torch_dtype: str = "auto",
-                 load_in_4bit: bool = False, min_pixels: int = 256 * 28 * 28,
-                 max_pixels: int = 1280 * 28 * 28):
+                 load_in_4bit: bool = False, min_pixels: int = MIN_PIXELS,
+                 max_pixels: int = MAX_PIXELS):
         import torch  # noqa: F401  (fail fast with a clear error if gpu extra missing)
         from transformers import AutoModelForImageTextToText, AutoProcessor
 

@@ -55,6 +55,11 @@ def main() -> None:
 
     from train_sft import build_messages, make_collator  # same data path as SFT — one contract
 
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).parent.parent / "src"))
+    from ledgerlens.schema import MAX_PIXELS, MIN_PIXELS
+
     records = [build_messages(json.loads(line), args.policy)
               for path in args.data for line in open(path)]
 
@@ -62,7 +67,7 @@ def main() -> None:
     model = AutoModelForImageTextToText.from_pretrained(
         args.model, torch_dtype=torch.float16, device_map="auto"
     )
-    processor = AutoProcessor.from_pretrained(args.model)
+    processor = AutoProcessor.from_pretrained(args.model, min_pixels=MIN_PIXELS, max_pixels=MAX_PIXELS)
 
     # Fake-quantize only the language model's linears; vision tower stays fp16.
     qat_quantizer = Int8DynActInt4WeightQATQuantizer(groupsize=128)

@@ -17,6 +17,8 @@ dependencies = [
 [project.optional-dependencies]
 # Dataset download/conversion (CORD, SROIE via HuggingFace)
 data = ["datasets>=2.19", "huggingface-hub>=0.23"]
+# Kaggle CLI, for the free-tier GPU pipeline (kaggle-as wrapper on top of this)
+kaggle = ["kaggle>=1.6"]
 # HTML -> PNG rendering for the synthetic pipeline
 render = ["playwright>=1.44"]
 # GPU-side training & compression (install on the training box, not locally)

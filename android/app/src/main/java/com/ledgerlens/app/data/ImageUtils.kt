@@ -17,8 +17,19 @@ import java.io.IOException
  */
 object ImageUtils {
 
-    /** Max long-edge in pixels. Bounds vision-encoder cost and memory. */
-    private const val MAX_DIMENSION = 1536
+    /**
+     * Max long-edge in pixels. Bounds vision-encoder cost and memory, and
+     * approximates parity with the eval-time pixel budget (MAX_PIXELS =
+     * 1280*28*28 ≈ 1,003,520 total pixels in src/ledgerlens/schema.py, used
+     * by every Python eval/training path). This is a single long-edge cap,
+     * not a total-pixel-count cap like the Python side's min/max_pixels, so
+     * it can't match exactly across every aspect ratio -- 1280 keeps a
+     * typical portrait-oriented receipt photo in the same ballpark rather
+     * than the previous 1536, which was meaningfully larger (more image
+     * tokens, more on-device latency, and a resolution never measured
+     * against during eval).
+     */
+    private const val MAX_DIMENSION = 1280
     private const val JPEG_QUALITY = 90
 
     @Throws(IOException::class)

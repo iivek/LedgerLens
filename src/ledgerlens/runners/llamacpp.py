@@ -17,10 +17,12 @@ import json
 import urllib.request
 from pathlib import Path
 
+from ..schema import MAX_NEW_TOKENS
+
 
 class LlamaCppRunner:
     def __init__(self, base_url: str = "http://127.0.0.1:8080", name: str = "llamacpp",
-                 max_new_tokens: int = 512, timeout_s: float = 600.0):
+                 max_new_tokens: int = MAX_NEW_TOKENS, timeout_s: float = 600.0):
         self.base_url = base_url.rstrip("/")
         self.name = name
         self.max_new_tokens = max_new_tokens
@@ -40,6 +42,13 @@ class LlamaCppRunner:
             }],
             "max_tokens": self.max_new_tokens,
             "temperature": 0.0,
+            # llama-server's repeat_penalty commonly defaults to a non-neutral
+            # value (e.g. 1.1), which actively penalizes repeated tokens --
+            # structured JSON output is inherently repetitive (braces, quotes,
+            # field names), so an unpinned default sampler isn't actually the
+            # "fixed prompt, greedy decoding" comparison this harness claims.
+            # Pinned explicitly rather than trusted to the server's default.
+            "repeat_penalty": 1.0,
         }
         req = urllib.request.Request(
             f"{self.base_url}/v1/chat/completions",

@@ -80,8 +80,10 @@ class ExtractionRepository {
         (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 6)
 
     companion object {
-        /** Enough for Qwen2-VL image tokens (~750 at 1536px max dim) + prompt + JSON output. */
+        /** Enough for Qwen2-VL image tokens (fewer now at ImageUtils' 1280px max dim than
+         *  the previous 1536px) + prompt + JSON output. */
         private const val N_CTX = 4096
+        /** Matches MAX_NEW_TOKENS in src/ledgerlens/schema.py -- keep both in sync. */
         private const val MAX_TOKENS = 1024
     }
 }
