@@ -23,4 +23,9 @@ runs/
 .DS_Store
 .idea/
 .vscode/
-data/distill/
+# data/distill/ is NOT ignored: unlike other data/ subdirs (downloadable or
+# locally regenerable in minutes), the teacher-labeled JSONL here represents
+# ~14 GPU-hours through a fragile multi-account Kaggle pipeline and is small
+# (a few MB, text only, no images) -- exactly the "small, expensive, not
+# cheaply regenerable" profile that belongs in version control, like
+# results/results.csv.
