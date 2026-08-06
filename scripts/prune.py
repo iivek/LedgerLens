@@ -5,9 +5,18 @@ barely rotate the residual stream are cheapest to remove. Drops the k least
 important LLM decoder layers (vision tower untouched), then a short recovery
 fine-tune (rerun train_sft.py on the pruned checkpoint) restores most accuracy.
 
+Calibration runs FULL multimodal forwards (image + text, via the real model
+call, not just the language_model submodule on text-only input_ids) so image
+embeddings actually flow through the layers being measured. An earlier
+text-only version of this script would rank layers by behavior on a
+distribution the model never sees at deployment -- for this task, every real
+input includes ~500-1500 image tokens dominating the sequence, so a layer
+whose job is consuming visual embeddings could look unimportant on text-only
+calibration and get dropped. Caught by independent review, fixed here.
+
     uv run --extra gpu python scripts/prune.py \
         --model runs/sft-2b-teacher-agree-merged --drop 6 \
-        --calib data/distill/cord_train_teacher.jsonl --out models/student2b-prune6
+        --calib data/distill/cord_train_teacher_0_200.jsonl --out models/student2b-prune6
     # then: python scripts/train_sft.py --student models/student2b-prune6 ... (recovery)
 """
 
@@ -15,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 
 
 def main() -> None:
@@ -23,27 +33,29 @@ def main() -> None:
     ap.add_argument("--drop", type=int, default=6, help="number of decoder layers to remove")
     ap.add_argument("--calib", required=True, help="teacher_label.py jsonl for importance estimation")
     ap.add_argument("--n-calib", type=int, default=64)
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
     import torch
     import torch.nn.functional as F
-    from transformers import AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
+    from qwen_vl_utils import process_vision_info
+    from transformers import AutoModelForImageTextToText, AutoProcessor
 
     model = AutoModelForImageTextToText.from_pretrained(
         args.model, torch_dtype=torch.bfloat16, device_map="auto"
     )
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    processor = AutoProcessor.from_pretrained(args.model)
     llm = model.model.language_model  # Qwen2-VL: text decoder stack
     layers = llm.layers
     n_layers = len(layers)
 
-    texts = []
+    calib_recs = []
     with open(args.calib) as f:
         for line in f:
-            rec = json.loads(line)
-            texts.append(rec["prompt"] + "\n" + json.dumps(rec["gold"], ensure_ascii=False))
-    texts = texts[: args.n_calib]
+            calib_recs.append(json.loads(line))
+    random.Random(args.seed).shuffle(calib_recs)  # don't silently calibrate on one file's ordering
+    calib_recs = calib_recs[: args.n_calib]
 
     # Hook every decoder layer; accumulate mean (1 - cosine) between its in/out states
     importance = torch.zeros(n_layers)
@@ -62,9 +74,15 @@ def main() -> None:
     for i, layer in enumerate(layers):
         hooks.append(layer.register_forward_hook(make_hook(i)))
     with torch.inference_mode():
-        for t in texts:
-            ids = tokenizer(t, return_tensors="pt", truncation=True, max_length=1024).to(model.device)
-            model.model.language_model(input_ids=ids["input_ids"])
+        for rec in calib_recs:
+            messages = [{"role": "user", "content": [
+                {"type": "image", "image": f"file://{rec['image']}"},
+                {"type": "text", "text": rec["prompt"]},
+            ]}]
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            image_inputs, _ = process_vision_info(messages)
+            inputs = processor(text=[text], images=image_inputs, return_tensors="pt").to(model.device)
+            model(**inputs)  # full multimodal forward -- image tokens reach every hooked layer
     for h in hooks:
         h.remove()
 

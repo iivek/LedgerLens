@@ -1,16 +1,32 @@
 """Weekend 3: PTQ points on the grid — AWQ int4 and GPTQ int8/int4 on the student LLM.
 
-Both methods quantize the language model; the vision tower stays fp16 (it is small
-relative to the LLM and quantizing it disproportionately hurts doc OCR fidelity —
-this is itself a finding to report).
-
-Calibration uses real task data: rendered prompts from a labeled train split, so
-activation statistics match deployment.
+Both methods quantize the language model. The vision tower (mmproj) is NOT
+quantized by this script or anywhere else in the current pipeline. Measure
+its share of deployed size/latency (results/results.csv: the vision tower
+GGUF is larger than the 4-bit LLM GGUF) before treating that as settled --
+it isn't yet an established finding, just an open question this script
+doesn't answer.
 
     uv run --extra gpu python scripts/quantize_ptq.py awq \
         --model runs/sft-2b-teacher-agree-merged --out models/student2b-awq-int4
     uv run --extra gpu python scripts/quantize_ptq.py gptq --bits 8 \
         --model runs/sft-2b-teacher-agree-merged --out models/student2b-gptq-int8
+
+CALIBRATION IS CURRENTLY TEXT-ONLY -- A REAL LIMITATION, NOT YET FIXED:
+calibration_texts() below builds calibration samples from PROMPT + gold JSON
+text, with no image ever passed through. At deployment the LLM's activations
+are dominated by ~500-1500 image-embedding tokens with a very different
+magnitude distribution than plain text; AWQ's per-channel scales (and GPTQ's
+Hessian estimate) computed from text-only calibration may not reflect the
+activations the quantized model actually sees. This was flagged by
+independent review and is NOT fixed here, because fixing it correctly
+requires confirming AutoAWQ/GPTQModel's calibration API actually accepts
+multimodal (image+text) samples for this specific model class -- something
+that needs verifying against the library versions on the GPU box, not a
+blind code change from an environment with no GPU to test it against. Before
+trusting AWQ/GPTQ results: check whether these libraries expose an image-
+aware calibration path for Qwen2-VL, and if not, treat this as a known
+methodology gap in any writeup rather than silently reporting the numbers.
 
 NOTE: AutoAWQ/GPTQModel support for Qwen2-VL moves quickly; pin versions on the GPU
 box and record them in results (the harness row's tag should encode method+bits).
@@ -24,7 +40,8 @@ import argparse
 import json
 
 
-def calibration_texts(splits: list[str], n: int) -> list[str]:
+def calibration_texts(splits: list[str], n: int, seed: int = 0) -> list[str]:
+    import random
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -36,6 +53,11 @@ def calibration_texts(splits: list[str], n: int) -> list[str]:
             for line in f:
                 rec = json.loads(line)
                 texts.append(PROMPT + "\n" + json.dumps(rec["gold"], ensure_ascii=False))
+    # Shuffle before truncating to n: slicing an unshuffled concatenation would
+    # make the whole calibration set whichever split was listed first if it
+    # alone has >= n samples (e.g. --calib cord.jsonl sroie.jsonl with n=256
+    # and cord having 800 samples -> 100% CORD, 0% SROIE calibration data).
+    random.Random(seed).shuffle(texts)
     return texts[:n]
 
 
