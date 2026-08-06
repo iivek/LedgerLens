@@ -1,15 +1,32 @@
 """Weekend 2, step 2: LoRA SFT of the 2B student on teacher outputs blended with gold.
 
-Blend policies (the spec's ablation axis):
-  gold          — ground truth targets only (no distillation baseline)
-  teacher       — teacher JSON whenever valid, else gold
-  teacher-agree — teacher JSON only when it agrees with gold on total, else gold
+Targets are built FIELD-BY-FIELD, not by picking one whole source per record:
 
-Targets are always serialized from structured JSON (compact, key-ordered), so the
-student learns the exact output contract the harness scores.
+  - A field the sample's source annotates (see metrics.ANNOTATED_FIELDS) always
+    uses gold for that field, when policy="gold" or the field-level agreement
+    check applies -- verified ground truth is never overridden by an unverified
+    guess.
+  - A field the source does NOT annotate (e.g. vendor/date/currency on CORD,
+    line_items/tax on SROIE) always uses the teacher's value, regardless of
+    policy. Gold is null there for every sample of that source -- supervising
+    on it would teach the model to output null for a field the receipt visibly
+    has, which is not a "no distillation" baseline, it's actively wrong
+    supervision. This was a real bug (caught by two independent reviews) in an
+    earlier whole-record gold/teacher/teacher-agree design.
+
+Policy controls what happens on ANNOTATED fields when teacher and gold might
+disagree (the actual ablation question -- see spec's "ablation of teacher-data
+vs ground-truth-only"):
+  gold          — always trust gold on annotated fields (no distillation there)
+  teacher       — trust the teacher's read whenever it produced one
+  teacher-agree — trust the teacher only where it agrees with gold on THAT
+                  field specifically (line_items: Hungarian F1 above a
+                  threshold). Per-field, not just a whole-record `total` proxy
+                  -- an agreeing total does not guarantee vendor or line_items
+                  are also correct, which the old total-only check missed.
 
     uv run --extra gpu python scripts/train_sft.py \
-        --data data/distill/cord_train_teacher.jsonl data/distill/synth_train_teacher.jsonl \
+        --data data/distill/cord_train_teacher_*.jsonl data/distill/sroie_train_teacher_*.jsonl \
         --policy teacher-agree --out runs/sft-2b-teacher-agree --merge
 """
 
@@ -17,22 +34,63 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from ledgerlens.metrics import annotated_fields, line_item_prf, scalar_match  # noqa: E402
+from ledgerlens.schema import SCALAR_FIELDS, LineItem  # noqa: E402
+
 STUDENT_DEFAULT = "Qwen/Qwen2-VL-2B-Instruct"
+LINE_ITEM_AGREE_F1 = 0.7  # threshold for "teacher's line items agree with gold" in teacher-agree
 
 
-def build_messages(rec: dict, policy: str) -> dict | None:
-    if policy == "gold":
-        target = rec["gold"]
-    elif policy == "teacher":
-        target = rec["teacher_json"] or rec["gold"]
-    elif policy == "teacher-agree":
-        target = rec["teacher_json"] if rec.get("teacher_agrees_total") else rec["gold"]
-    else:
-        raise ValueError(policy)
-    if target is None:
-        return None
+def _line_items_agree(teacher_items: list, gold_items: list) -> bool:
+    t = [LineItem.model_validate(i) for i in (teacher_items or [])]
+    g = [LineItem.model_validate(i) for i in (gold_items or [])]
+    _, _, f1 = line_item_prf(t, g)
+    return f1 >= LINE_ITEM_AGREE_F1
+
+
+def _field_agrees(field: str, teacher_value, gold_value) -> bool:
+    if field == "line_items":
+        return _line_items_agree(teacher_value, gold_value)
+    return scalar_match(field, teacher_value, gold_value)
+
+
+def build_target(rec: dict, policy: str) -> dict:
+    """Field-level blend. rec: one teacher_label.py output record."""
+    source = rec["source"]
+    gold = rec["gold"]
+    teacher = rec.get("teacher_json")
+    annotated = annotated_fields(source)
+
+    target = {}
+    for field in (*SCALAR_FIELDS, "line_items"):
+        gold_value = gold.get(field)
+        teacher_value = teacher.get(field) if teacher else None
+
+        if field not in annotated:
+            # No ground truth exists for this field on this source at all --
+            # the teacher's guess (possibly None if it produced invalid JSON)
+            # is the only signal available, for every policy.
+            target[field] = teacher_value
+            continue
+
+        if policy == "gold" or teacher is None:
+            target[field] = gold_value
+        elif policy == "teacher":
+            target[field] = teacher_value if teacher_value is not None else gold_value
+        elif policy == "teacher-agree":
+            target[field] = teacher_value if _field_agrees(field, teacher_value, gold_value) else gold_value
+        else:
+            raise ValueError(policy)
+    return target
+
+
+def build_messages(rec: dict, policy: str) -> dict:
+    target = build_target(rec, policy)
     return {
         "images": [rec["image"]],
         "messages": [
@@ -113,20 +171,19 @@ def main() -> None:
     from transformers import (AutoModelForImageTextToText, AutoProcessor, Trainer,
                               TrainingArguments)
 
-    records = []
-    for path in args.data:
-        with open(path) as f:
-            for line in f:
-                m = build_messages(json.loads(line), args.policy)
-                if m:
-                    records.append(m)
+    records = [build_messages(json.loads(line), args.policy)
+              for path in args.data for line in open(path)]
     print(f"{len(records)} training samples (policy={args.policy})")
 
     processor = AutoProcessor.from_pretrained(
         args.student, min_pixels=256 * 28 * 28, max_pixels=1024 * 28 * 28
     )
+    # T4 (Turing, sm_75) has no bf16 support -- TrainingArguments hard-fails at
+    # init and model loading silently mis-casts under bf16 on this hardware.
+    # fp16 needs the usual loss-scaling care with LoRA, which Trainer handles
+    # via GradScaler when bf16=False, fp16=True.
     model = AutoModelForImageTextToText.from_pretrained(
-        args.student, torch_dtype=torch.bfloat16, device_map="auto"
+        args.student, torch_dtype=torch.float16, device_map="auto"
     )
     lora = LoraConfig(
         r=args.lora_r, lora_alpha=2 * args.lora_r, lora_dropout=0.05,
@@ -148,7 +205,7 @@ def main() -> None:
             output_dir=args.out, num_train_epochs=args.epochs, learning_rate=args.lr,
             per_device_train_batch_size=args.batch_size,
             gradient_accumulation_steps=args.grad_accum,
-            bf16=True, logging_steps=10, save_strategy="epoch", report_to=[],
+            fp16=True, logging_steps=10, save_strategy="epoch", report_to=[],
             gradient_checkpointing=True, remove_unused_columns=False,
         ),
         train_dataset=Dataset.from_list(records),
