@@ -26,6 +26,17 @@ def test_number_plain_and_negative():
     assert normalize_number("N/A") is None
 
 
+def test_number_rejects_disjoint_garbage_rather_than_concatenating():
+    # A real failure mode: this must NOT become 234.50 by stripping " items "
+    # and splicing "2" onto "34.50" -- that's a confident wrong number.
+    assert normalize_number("2 items 34.50") is None
+    assert normalize_number("qty 3 price 12.00") is None
+
+
+def test_number_negative_sign_prefix():
+    assert normalize_number("-12.00") == -12.0
+
+
 def test_date_iso_and_textual():
     assert normalize_date("2024-03-05") == "2024-03-05"
     assert normalize_date("5 Mar 2024") == "2024-03-05"

@@ -75,7 +75,10 @@ def bench_gguf(args: argparse.Namespace) -> None:
         tok_s = parse_tok_s(err)
         ram = parse_peak_ram_gb(err, is_darwin)
         if ram is not None:
-            peak_ram_gb = ram
+            # max across repeats, not last-run-wins: peak RAM is what matters
+            # for "will this fit on the phone", and later runs (warm caches,
+            # less page-in) can under-report relative to the true worst case.
+            peak_ram_gb = max(peak_ram_gb or 0.0, ram)
         runs.append((e2e, tok_s))
         print(f"run {i + 1}/{args.repeats}: e2e={e2e:.2f}s tok/s={tok_s}")
 

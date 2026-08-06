@@ -60,19 +60,32 @@ def normalize_currency(value: str | None) -> str | None:
     return _CURRENCY_ALIASES.get(v, v if re.fullmatch(r"[A-Z]{3}", v) else normalize_text(value))
 
 
+# A single number token: a digit run with internal ./,  allowed, optionally
+# continuing across a space/nbsp IFF what follows is a legitimate 3-digit
+# thousands group (e.g. "1 234,56") -- so a stray word between two digit
+# groups ("2 items 34.50") does not get silently spliced into one number.
+_NUMBER_TOKEN_RE = re.compile(r"\(?\d[\d.,]*(?:[  ]\d{3}(?:[.,]\d+)?)*\)?")
+
+
 def normalize_number(value: str | float | int | None) -> float | None:
     """Parse a monetary amount from messy strings; the spec's separator-tolerance rule.
 
     Handles "1,234.56", "1.234,56", "1 234,56", "$ 12.00", "12,00", "(4.50)" (negative).
-    Returns None if no number can be extracted.
+    Returns None if no number can be extracted, OR if the string contains more
+    than one disjoint number-like token (e.g. "2 items 34.50" from a garbled
+    model output) -- concatenating unrelated digit groups into one confident
+    wrong number is worse than declining to guess.
     """
     if value is None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    s = value.strip()
-    negative = bool(re.match(r"^\(.*\)$", s)) or s.lstrip().startswith("-")
-    s = re.sub(r"[^\d.,]", "", s)
+    raw = value.strip()
+    negative = bool(re.match(r"^\(.*\)$", raw)) or raw.lstrip().startswith("-")
+    tokens = _NUMBER_TOKEN_RE.findall(raw)
+    if len(tokens) != 1:
+        return None
+    s = re.sub(r"[^\d.,]", "", tokens[0])
     if not re.search(r"\d", s):
         return None
     # Decide decimal separator: the rightmost of . or , iff followed by 1-2 digits at end

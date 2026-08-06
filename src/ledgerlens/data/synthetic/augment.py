@@ -27,9 +27,15 @@ def augment_photo(img: np.ndarray, rng: random.Random) -> np.ndarray:
     img = _pad_on_background(img, rng)
     img = _perspective(img, rng)
     spent = 0.0
-    for prob, fn in (
-        (0.7, _shadow), (0.5, _lighting), (0.6, _blur), (0.5, _noise), (0.7, _jpeg),
-    ):
+    # Shuffle order among the scene/capture effects so severity budget doesn't
+    # always favor whichever effect happens to be listed first (previously
+    # _shadow always drew at full budget, later effects always got the
+    # scraps). JPEG stays last regardless: it's the final encode step in a
+    # real phone pipeline, applied after the scene/sensor effects, not
+    # interchangeable with them.
+    scene_effects = [(0.7, _shadow), (0.5, _lighting), (0.6, _blur), (0.5, _noise)]
+    rng.shuffle(scene_effects)
+    for prob, fn in (*scene_effects, (0.7, _jpeg)):
         if rng.random() < prob:
             severity = rng.random()
             scale = min(1.0, max(0.15, SEVERITY_BUDGET - spent))

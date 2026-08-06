@@ -42,12 +42,27 @@ def main() -> None:
     samples = samples[args.offset :]
     if args.limit:
         samples = samples[: args.limit]
-    runner = get_runner("hf", model_id=args.teacher, load_in_4bit=args.load_in_4bit)
 
+    # Resume-safe: a rerun with the same --out (e.g. a Kaggle session getting
+    # killed by the quota/time cap mid-chunk, then restarted) previously
+    # opened with "w" and silently clobbered whatever had already been
+    # labeled. Now skips ids already present in an existing output file and
+    # appends the rest, so partial progress in a chunk is never lost.
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    already_done = set()
+    if out_path.exists():
+        with open(out_path) as f:
+            for line in f:
+                already_done.add(json.loads(line)["id"])
+        if already_done:
+            print(f"resuming: {len(already_done)} samples already labeled in {out_path}", flush=True)
+    samples = [s for s in samples if s.id not in already_done]
+
+    runner = get_runner("hf", model_id=args.teacher, load_in_4bit=args.load_in_4bit)
+
     n_valid = n_agree = 0
-    with open(out_path, "w") as f:
+    with open(out_path, "a") as f:
         for i, s in enumerate(samples):
             t0 = time.perf_counter()
             raw = runner.generate(s.image, PROMPT)
