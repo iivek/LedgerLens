@@ -31,23 +31,45 @@ from .augment import augment_photo
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 # (code, symbol, decimals, separator style)  — style: us "1,234.56", eu "1.234,56", space "1 234,56"
-CURRENCIES = [
+#
+# Split into TRAIN/EVAL pools (not just a shuffle-then-cut of generated records)
+# so synth_eval tests genuinely unseen currencies/items, not just different
+# random instances of an identical distribution. This was a real gap: the old
+# eval split shared every content pool with train, so it measured template
+# memorization more than reading ability (flagged by review, previously unfixed).
+_TRAIN_CURRENCIES = [
     ("USD", "$", 2, "us"), ("EUR", "€", 2, "eu"), ("GBP", "£", 2, "us"),
     ("IDR", "Rp", 0, "eu"), ("INR", "₹", 2, "us"), ("MYR", "RM", 2, "us"),
-    ("PHP", "₱", 2, "us"), ("VND", "₫", 0, "eu"), ("TRY", "₺", 2, "eu"),
-    ("BRL", "R$", 2, "eu"), ("NGN", "₦", 2, "us"), ("KES", "KSh", 2, "us"),
+    ("PHP", "₱", 2, "us"), ("BRL", "R$", 2, "eu"), ("NGN", "₦", 2, "us"),
 ]
+_EVAL_CURRENCIES = [
+    ("VND", "₫", 0, "eu"), ("TRY", "₺", 2, "eu"), ("KES", "KSh", 2, "us"),
+    ("ZAR", "R", 2, "us"), ("EGP", "£E", 2, "us"),
+]
+CURRENCIES = _TRAIN_CURRENCIES + _EVAL_CURRENCIES  # kept for any external reference to the full set
+
 FONTS_RECEIPT = ["Courier New", "Menlo", "monospace"]
 FONTS_INVOICE = ["Helvetica", "Arial", "Georgia", "Verdana", "Trebuchet MS"]
 ACCENTS = ["#1a4d8f", "#7a1f1f", "#14532d", "#4a3b8f", "#8a5a00", "#222222"]
-ITEM_NOUNS = ["Coffee", "Nasi Goreng", "Notebook", "USB-C Cable", "T-Shirt", "Consulting (hr)",
-              "Delivery Fee", "Laundry kg", "Phone Case", "Chicken Rice", "Design Services",
-              "Screen Repair", "Bottled Water", "Fabric (m)", "Printing B/W", "Airtime Top-up",
-              "Data Bundle 5GB", "Motorbike Parking", "Hosting (mo)", "Photo Prints"]
+
+_TRAIN_ITEM_NOUNS = ["Coffee", "Nasi Goreng", "Notebook", "USB-C Cable", "T-Shirt",
+                     "Consulting (hr)", "Delivery Fee", "Laundry kg", "Phone Case",
+                     "Chicken Rice", "Design Services", "Screen Repair", "Bottled Water",
+                     "Fabric (m)", "Printing B/W", "Airtime Top-up", "Data Bundle 5GB",
+                     "Motorbike Parking", "Hosting (mo)", "Photo Prints", "Umbrella",
+                     "Notebook Pen Set", "Rice 5kg", "Instant Noodles", "SIM Card"]
+_EVAL_ITEM_NOUNS = ["Sunglasses", "Bicycle Repair", "Iced Tea", "Extension Cord",
+                    "Car Wash", "Passport Photo", "Flash Drive 32GB", "Umbrella Repair"]
+ITEM_NOUNS = _TRAIN_ITEM_NOUNS + _EVAL_ITEM_NOUNS
+
 FOOTERS = ["THANK YOU! PLEASE COME AGAIN", "Goods sold are not returnable",
            "Payment due within 14 days", "Terima kasih!", "Keep receipt for warranty",
            "* prices include service charge *"]
 PAYMENTS = ["CASH", "VISA ****{n}", "MASTERCARD ****{n}", "QRIS", "M-PESA", "GOPAY"]
+
+_CURRENCY_SCALE = {"USD": 1, "EUR": 1, "GBP": 1, "IDR": 15000, "INR": 80, "MYR": 4.5,
+                   "PHP": 55, "VND": 24000, "TRY": 30, "BRL": 5, "NGN": 1400, "KES": 130,
+                   "ZAR": 18, "EGP": 31}
 
 
 def fmt_money(value: float, decimals: int, style: str) -> str:
@@ -128,19 +150,26 @@ def _trim_white(png_path: Path) -> None:
         Image.fromarray(img[:bottom]).save(png_path)
 
 
-def make_sample(rng: random.Random, faker: Faker) -> tuple[str, dict, str, int]:
-    """Returns (template_name, jinja context, gold-free) and gold dict embedded in ctx."""
-    code, symbol, decimals, style = rng.choice(CURRENCIES)
+def make_sample(rng: random.Random, faker: Faker, split: str = "train") -> tuple[str, dict, str, int]:
+    """Returns (template_name, jinja context, gold-free) and gold dict embedded in ctx.
+
+    split: "train" or "eval" -- selects from disjoint currency/item-noun pools
+    (see module-level _TRAIN_*/_EVAL_* lists) so eval samples exercise content
+    the model genuinely hasn't seen in training, not just fresh random
+    instances of an identical distribution.
+    """
+    currency_pool = _TRAIN_CURRENCIES if split == "train" else _EVAL_CURRENCIES
+    item_pool = _TRAIN_ITEM_NOUNS if split == "train" else _EVAL_ITEM_NOUNS
+    code, symbol, decimals, style = rng.choice(currency_pool)
     is_invoice = rng.random() < 0.4
     n_items = rng.randint(1, 8 if not is_invoice else 6)
-    scale = {"USD": 1, "EUR": 1, "GBP": 1, "IDR": 15000, "INR": 80, "MYR": 4.5,
-             "PHP": 55, "VND": 24000, "TRY": 30, "BRL": 5, "NGN": 1400, "KES": 130}[code]
+    scale = _CURRENCY_SCALE[code]
     items, gold_items, subtotal = [], [], 0.0
     for _ in range(n_items):
         qty = float(rng.choice([1, 1, 1, 2, 2, 3, 4, 5])) if rng.random() < 0.85 else round(rng.uniform(0.2, 3.0), 2)
         unit = round(rng.uniform(0.5, 120) * scale, decimals)
         total = round(qty * unit, decimals)
-        desc = rng.choice(ITEM_NOUNS)
+        desc = rng.choice(item_pool)
         subtotal += total
         items.append({
             "description": desc,
@@ -187,7 +216,40 @@ def make_sample(rng: random.Random, faker: Faker) -> tuple[str, dict, str, int]:
     return template, ctx, code, width
 
 
-def generate_dataset(n: int, out_dir: Path, seed: int = 17, augment: bool = True) -> None:
+def _generate_split(n: int, split: str, out_dir: Path, img_dir: Path, env, renderer,
+                    rng: random.Random, faker: Faker, augment: bool) -> list[dict]:
+    records = []
+    for i in range(n):
+        template, ctx, _code, width = make_sample(rng, faker, split=split)
+        gold = ctx.pop("__gold__")
+        sample_id = f"synth_{split}_{i:05d}"
+        png = img_dir / f"{sample_id}.png"
+        # Resumable: rng draws replay identically each run (fixed seed), so an
+        # existing image is guaranteed to match its gold — skip the render.
+        # augment_photo consumes rng too, so replay it even when skipping.
+        if png.exists():
+            if augment:
+                augment_photo(np.zeros((8, 8, 3), dtype=np.uint8), rng)
+        else:
+            renderer.render(env.get_template(template).render(**ctx), png, width)
+            _trim_white(png)
+            if augment:
+                img = cv2.imread(str(png))
+                cv2.imwrite(str(png), augment_photo(img, rng))
+        records.append({"id": sample_id, "image": str(png.relative_to(out_dir)),
+                        "source": "synthetic", "gold": gold})
+        if (i + 1) % 50 == 0:
+            print(f"  [{split}] rendered {i + 1}/{n}")
+    return records
+
+
+def generate_dataset(n: int, out_dir: Path, seed: int = 17, augment: bool = True,
+                     n_eval: int | None = None) -> None:
+    """n: train sample count. n_eval: eval sample count (default: 10% of n,
+    minimum 100) -- generated from disjoint currency/item-noun pools (see
+    make_sample's split param), not a random subset of the same distribution.
+    """
+    n_eval = n_eval if n_eval is not None else max(100, n // 10)
     rng = random.Random(seed)
     Faker.seed(seed)
     faker = Faker(["en_US", "en_GB", "id_ID", "en_IN", "pt_BR", "tr_TR"])
@@ -195,35 +257,12 @@ def generate_dataset(n: int, out_dir: Path, seed: int = 17, augment: bool = True
     renderer = Renderer.create()
     img_dir = out_dir / "images" / "synth"
     img_dir.mkdir(parents=True, exist_ok=True)
-    records = []
     try:
-        for i in range(n):
-            template, ctx, _code, width = make_sample(rng, faker)
-            gold = ctx.pop("__gold__")
-            sample_id = f"synth_{i:05d}"
-            png = img_dir / f"{sample_id}.png"
-            # Resumable: rng draws replay identically each run (fixed seed), so an
-            # existing image is guaranteed to match its gold — skip the render.
-            # augment_photo consumes rng too, so replay it even when skipping.
-            if png.exists():
-                if augment:
-                    augment_photo(np.zeros((8, 8, 3), dtype=np.uint8), rng)
-            else:
-                renderer.render(env.get_template(template).render(**ctx), png, width)
-                _trim_white(png)
-                if augment:
-                    img = cv2.imread(str(png))
-                    cv2.imwrite(str(png), augment_photo(img, rng))
-            records.append({"id": sample_id, "image": str(png.relative_to(out_dir)),
-                            "source": "synthetic", "gold": gold})
-            if (i + 1) % 50 == 0:
-                print(f"  rendered {i + 1}/{n}")
+        train_records = _generate_split(n, "train", out_dir, img_dir, env, renderer, rng, faker, augment)
+        eval_records = _generate_split(n_eval, "eval", out_dir, img_dir, env, renderer, rng, faker, augment)
     finally:
         renderer.close()
-    # 90/10 train/eval split, deterministic
-    rng.shuffle(records)
-    cut = max(1, int(len(records) * 0.9)) if len(records) > 1 else 1
-    write_split(records[:cut], out_dir / "synth_train.jsonl")
-    if records[cut:]:
-        write_split(records[cut:], out_dir / "synth_eval.jsonl")
-    print(f"wrote {cut} train / {len(records) - cut} eval samples under {out_dir}")
+    write_split(train_records, out_dir / "synth_train.jsonl")
+    write_split(eval_records, out_dir / "synth_eval.jsonl")
+    print(f"wrote {len(train_records)} train / {len(eval_records)} eval samples "
+         f"(disjoint currency/item pools) under {out_dir}")

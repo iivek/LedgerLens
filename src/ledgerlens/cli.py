@@ -54,7 +54,7 @@ def _cmd_convert(args: argparse.Namespace) -> None:
 def _cmd_synth(args: argparse.Namespace) -> None:
     from .data.synthetic.generate import generate_dataset
     generate_dataset(n=args.n, out_dir=Path(args.out), seed=args.seed,
-                     augment=not args.no_augment)
+                     augment=not args.no_augment, n_eval=args.n_eval)
 
 
 def main() -> None:
@@ -83,6 +83,9 @@ def main() -> None:
 
     p_synth = sub.add_parser("synth", help="generate synthetic invoices")
     p_synth.add_argument("--n", type=int, default=2000)
+    p_synth.add_argument("--n-eval", type=int, default=None,
+                         help="eval sample count (default: max(100, n/10)); drawn from "
+                              "currency/item pools disjoint from train, see generate.py")
     p_synth.add_argument("--out", default="data/synthetic")
     p_synth.add_argument("--seed", type=int, default=17)
     p_synth.add_argument("--no-augment", action="store_true")
