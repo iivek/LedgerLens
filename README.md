@@ -82,8 +82,11 @@ Appends one aggregate row to `results/results.csv` and persists per-sample raw o
 ```sh
 llama-server -m models/gguf/ledgerlens-q4_k_m.gguf --mmproj models/gguf/mmproj-ledgerlens-f16.gguf -c 4096 --port 8080
 uv run ledgerlens eval --runner llamacpp --split data/processed/cord_test.jsonl \
+    --model-path models/gguf/ledgerlens-q4_k_m.gguf --mmproj-path models/gguf/mmproj-ledgerlens-f16.gguf \
     --tag student2b-q4km --host laptop-cpu
 ```
+
+Every row also carries `prov_*` provenance columns (model file SHA256 + size, runtime version, sampler settings) captured automatically from the runner — not just the human-typed `tag`, so "every number reproducible" doesn't rest on naming discipline alone.
 
 **Metrics** (fixed before any training): per-field exact-match & F1 (vendor, date, currency, total, tax; totals compared with separator normalization and ±0.005 tolerance), JSON-validity rate, line-item F1 with Hungarian matching over (description, qty, price), and latency percentiles.
 

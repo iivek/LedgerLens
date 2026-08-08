@@ -21,6 +21,9 @@ class HFVLMRunner:
 
         self.name = model_id
         self.max_new_tokens = max_new_tokens
+        self._model_id = model_id
+        self._load_in_4bit = load_in_4bit
+        self._min_pixels, self._max_pixels = min_pixels, max_pixels
         kwargs: dict = {"device_map": device_map, "torch_dtype": torch_dtype}
         if load_in_4bit:
             from transformers import BitsAndBytesConfig
@@ -33,6 +36,21 @@ class HFVLMRunner:
         self.processor = AutoProcessor.from_pretrained(
             model_id, min_pixels=min_pixels, max_pixels=max_pixels
         )
+
+    def provenance(self) -> dict:
+        import torch
+        import transformers
+
+        return {
+            "runtime": "transformers/HFVLMRunner",
+            "model_id": self._model_id,
+            "load_in_4bit": self._load_in_4bit,
+            "min_pixels": self._min_pixels, "max_pixels": self._max_pixels,
+            "max_new_tokens": self.max_new_tokens,
+            "torch_version": torch.__version__,
+            "transformers_version": transformers.__version__,
+            "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+        }
 
     def generate(self, image_path: Path, prompt: str) -> str:
         import torch

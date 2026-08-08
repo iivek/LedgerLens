@@ -3,6 +3,7 @@
     ledgerlens eval --runner hf --model Qwen/Qwen2-VL-2B-Instruct \
         --split data/processed/cord_test.jsonl --tag student2b-fp16 --host gpu
     ledgerlens eval --runner llamacpp --url http://127.0.0.1:8080 \
+        --model-path models/gguf/ledgerlens-q4_k_m.gguf --mmproj-path models/gguf/mmproj-f16.gguf \
         --split data/processed/cord_test.jsonl --tag student2b-q4km --host laptop-cpu
     ledgerlens convert cord --out data/processed
     ledgerlens synth --n 2000 --out data/synthetic
@@ -23,7 +24,8 @@ def _cmd_eval(args: argparse.Namespace) -> None:
             raise SystemExit("--model is required for --runner hf")
         runner = get_runner("hf", model_id=args.model, load_in_4bit=args.load_in_4bit)
     elif args.runner == "llamacpp":
-        runner = get_runner("llamacpp", base_url=args.url, name=args.tag)
+        runner = get_runner("llamacpp", base_url=args.url, name=args.tag,
+                           model_path=args.model_path, mmproj_path=args.mmproj_path)
     else:
         raise SystemExit(f"unknown runner {args.runner}")
 
@@ -63,6 +65,9 @@ def main() -> None:
     p_eval.add_argument("--runner", choices=["hf", "llamacpp"], required=True)
     p_eval.add_argument("--model", help="HF model id or local checkpoint path (hf runner)")
     p_eval.add_argument("--url", default="http://127.0.0.1:8080", help="llama-server URL")
+    p_eval.add_argument("--model-path", help="path to the GGUF llama-server is serving, "
+                                             "for provenance (sha256 + size) in results.csv")
+    p_eval.add_argument("--mmproj-path", help="path to the mmproj GGUF, for provenance")
     p_eval.add_argument("--load-in-4bit", action="store_true", help="bnb 4-bit (teacher on 24GB)")
     p_eval.add_argument("--split", required=True, help="unified jsonl split")
     p_eval.add_argument("--tag", required=True, help="variant name; one point on the Pareto grid")

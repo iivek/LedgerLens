@@ -90,9 +90,20 @@ def run_eval(runner: ModelRunner, split_path: Path, tag: str, host: str,
     print(f"Evaluating {runner.name} on {split_path} ({len(samples)} samples) -> {run_dir}")
     scores = evaluate(runner, samples, run_dir)
     agg = aggregate(scores)
+    # Provenance: what actually produced this row, beyond the human-typed tag
+    # (a real gap -- `runner` used to just duplicate `tag`, so "every number
+    # reproducible" rested entirely on tag-naming discipline). Optional: only
+    # runners that implement provenance() contribute it (MockRunner doesn't).
+    prov = {}
+    if hasattr(runner, "provenance"):
+        try:
+            prov = {f"prov_{k}": v for k, v in runner.provenance().items()}
+        except Exception as e:  # provenance is best-effort, must never fail the eval itself
+            prov = {"prov_error": f"{type(e).__name__}: {e}"}
     row = {
         "tag": tag, "runner": runner.name, "split": str(split_path), "host": host,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        **prov,
         **{k: f"{v:.4f}" if isinstance(v, float) else v for k, v in agg.items()},
     }
     append_results_csv(results_csv, row)
