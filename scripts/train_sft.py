@@ -25,9 +25,25 @@ vs ground-truth-only"):
                   -- an agreeing total does not guarantee vendor or line_items
                   are also correct, which the old total-only check missed.
 
+ALWAYS run --smoke-test first on new data/hardware -- it exercises the full
+data/model/collator/save path in a couple minutes instead of hours. There is
+no budget for a failed full run.
+
     uv run --extra gpu python scripts/train_sft.py \
         --data data/distill/cord_train_teacher_*.jsonl data/distill/sroie_train_teacher_*.jsonl \
-        --policy teacher-agree --out runs/sft-2b-teacher-agree --merge
+        --image-root /kaggle/input/datasets/<account>/ledgerlens-train-data \
+        --eval-data data/distill/cord_val_teacher.jsonl --eval-image-root <val-data-mount> \
+        --policy teacher-agree --out runs/sft-2b-teacher-agree --smoke-test   # verify first
+
+    uv run --extra gpu python scripts/train_sft.py \
+        --data data/distill/cord_train_teacher_*.jsonl data/distill/sroie_train_teacher_*.jsonl \
+        --image-root /kaggle/input/datasets/<account>/ledgerlens-train-data \
+        --eval-data data/distill/cord_val_teacher.jsonl --eval-image-root <val-data-mount> \
+        --policy teacher-agree --out runs/sft-2b-teacher-agree --merge   # the real run
+
+Re-running the exact same command (same --out) after an interrupted session
+resumes from the latest checkpoint automatically -- see the --out checkpoint
+detection below.
 """
 
 from __future__ import annotations
@@ -89,10 +105,15 @@ def build_target(rec: dict, policy: str) -> dict:
     return target
 
 
-def build_messages(rec: dict, policy: str) -> dict:
+def build_messages(rec: dict, policy: str, image_root: str | Path | None = None) -> dict:
+    """image_root: directory rec["image"] (a relative path, per teacher_label.py's
+    format) is resolved against. Required in practice -- omitting it only works
+    if the caller already put an absolute/resolvable path in rec["image"].
+    """
     target = build_target(rec, policy)
+    image_path = str(Path(image_root) / rec["image"]) if image_root else rec["image"]
     return {
-        "images": [rec["image"]],
+        "images": [image_path],
         "messages": [
             {"role": "user", "content": [
                 {"type": "image"},
@@ -155,6 +176,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--student", default=STUDENT_DEFAULT)
     ap.add_argument("--data", nargs="+", required=True, help="teacher_label.py output jsonl(s)")
+    ap.add_argument("--image-root", required=True,
+                    help="directory each --data record's relative image path resolves against "
+                         "-- the mounted train-data dataset root (e.g. the directory containing "
+                         "cord_train.jsonl/images/ on this Kaggle session), NOT the labeled "
+                         "jsonl's own directory, which is a different mount/location on Kaggle")
     ap.add_argument("--policy", choices=["gold", "teacher", "teacher-agree"], default="teacher-agree")
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=float, default=2.0)
@@ -163,6 +189,28 @@ def main() -> None:
     ap.add_argument("--grad-accum", type=int, default=16)
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--merge", action="store_true", help="merge LoRA into base weights after training")
+    ap.add_argument("--eval-data", nargs="*", default=None,
+                    help="teacher_label.py-format jsonl(s) (or gold-only records -- teacher_json "
+                         "may be absent) held out for eval_loss-based checkpoint selection, e.g. "
+                         "a cord_val/sroie_val split. Optional but strongly recommended: without "
+                         "it, save_strategy falls back to 'epoch' with no way to tell whether a "
+                         "later checkpoint is actually better or just more overfit. NOTE: cord_val "
+                         "was never uploaded to the ledgerlens-train-data Kaggle dataset (only "
+                         "*_train splits were) -- it must be added to whatever gets mounted this "
+                         "session before --eval-data can point at it.")
+    ap.add_argument("--eval-image-root", default=None,
+                    help="image root for --eval-data records, if different from --image-root "
+                         "(e.g. eval data mounted from a separate dataset). Defaults to --image-root.")
+    ap.add_argument("--save-steps", type=int, default=50,
+                    help="checkpoint frequency when --eval-data is given (also the resume "
+                         "granularity -- a session killed mid-epoch loses at most this many "
+                         "steps, not the whole epoch)")
+    ap.add_argument("--smoke-test", action="store_true",
+                    help="run on --smoke-test-n samples for --smoke-test-n steps and exit before "
+                         "the real training loop -- verifies the full data/model/collator/save "
+                         "path end-to-end in minutes, not hours. ALWAYS run this before the real "
+                         "job on new data/hardware; there is no budget for a failed full run.")
+    ap.add_argument("--smoke-test-n", type=int, default=4)
     args = ap.parse_args()
 
     import torch
@@ -171,9 +219,27 @@ def main() -> None:
     from transformers import (AutoModelForImageTextToText, AutoProcessor, Trainer,
                               TrainingArguments)
 
-    records = [build_messages(json.loads(line), args.policy)
-              for path in args.data for line in open(path)]
+    def load_records(paths, policy, image_root, limit=None):
+        recs = [build_messages(json.loads(line), policy, image_root=image_root)
+               for path in paths for line in open(path)]
+        return recs[:limit] if limit else recs
+
+    train_limit = args.smoke_test_n if args.smoke_test else None
+    if args.smoke_test:
+        print(f"=== SMOKE TEST: {args.smoke_test_n} samples, 1 step, no save/merge ===")
+
+    records = load_records(args.data, args.policy, args.image_root, limit=train_limit)
     print(f"{len(records)} training samples (policy={args.policy})")
+    missing = [m["images"][0] for m in records if not Path(m["images"][0]).exists()][:5]
+    if missing:
+        raise SystemExit(f"--image-root {args.image_root} looks wrong -- sample image(s) not "
+                         f"found, e.g.: {missing}")
+
+    eval_records = None
+    if args.eval_data and not args.smoke_test:
+        eval_image_root = args.eval_image_root or args.image_root
+        eval_records = load_records(args.eval_data, args.policy, eval_image_root)
+        print(f"{len(eval_records)} eval samples")
 
     # Matches the eval-time pixel budget (hf_vlm.py/llamacpp deployment) so
     # training and evaluation see the same effective image resolution --
@@ -206,19 +272,68 @@ def main() -> None:
 
     collate = make_collator(processor)
 
+    if args.smoke_test:
+        # 1-2 real optimizer steps on a handful of samples: exercises data
+        # loading, message/target construction, the collator's shape and
+        # length-guard logic, fp16 + LoRA + gradient-checkpointing
+        # compatibility, and a full forward/backward/save path -- everything
+        # that could crash a multi-hour run -- in minutes. No save, no merge:
+        # this checkpoint is throwaway, only the "did it crash" signal matters.
+        smoke_args = TrainingArguments(
+            output_dir=args.out + "-smoke", max_steps=min(2, max(1, len(records))),
+            per_device_train_batch_size=1, gradient_accumulation_steps=1,
+            fp16=True, logging_steps=1, save_strategy="no", report_to=[],
+            gradient_checkpointing=True, remove_unused_columns=False,
+        )
+        Trainer(model=model, args=smoke_args, train_dataset=Dataset.from_list(records),
+               data_collator=collate).train()
+        print("=== SMOKE TEST PASSED: forward/backward/optimizer step completed without error ===")
+        print("=== Re-run without --smoke-test for the real job ===")
+        return
+
+    # Resume support: Kaggle sessions can be killed mid-run, and re-running
+    # this exact command with the same --out is meant to pick up where it
+    # left off rather than restart from scratch -- there's no budget for a
+    # second full run if a long one gets cut off partway through.
+    resume = None
+    if Path(args.out).is_dir() and any(Path(args.out).glob("checkpoint-*")):
+        resume = True
+        print(f"=== resuming from latest checkpoint in {args.out} ===")
+
+    training_kwargs = dict(
+        output_dir=args.out, num_train_epochs=args.epochs, learning_rate=args.lr,
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        fp16=True, logging_steps=10, report_to=[],
+        gradient_checkpointing=True, remove_unused_columns=False,
+    )
+    eval_dataset = None
+    if eval_records is not None:
+        # Frequent step-based checkpoints (not just per-epoch) so a killed
+        # session loses at most --save-steps of progress, and eval_loss picks
+        # the best one seen rather than trusting "whatever finished last" --
+        # LoRA on a few thousand samples can start overfitting well within
+        # a single epoch.
+        eval_dataset = Dataset.from_list(eval_records)
+        training_kwargs.update(
+            eval_strategy="steps", eval_steps=args.save_steps,
+            save_strategy="steps", save_steps=args.save_steps,
+            load_best_model_at_end=True, metric_for_best_model="eval_loss",
+            save_total_limit=3,
+        )
+    else:
+        training_kwargs["save_strategy"] = "epoch"
+        print("=== WARNING: no --eval-data given; saving on epoch boundaries with no "
+              "eval-based selection. Strongly prefer passing --eval-data. ===")
+
     trainer = Trainer(
         model=model,
-        args=TrainingArguments(
-            output_dir=args.out, num_train_epochs=args.epochs, learning_rate=args.lr,
-            per_device_train_batch_size=args.batch_size,
-            gradient_accumulation_steps=args.grad_accum,
-            fp16=True, logging_steps=10, save_strategy="epoch", report_to=[],
-            gradient_checkpointing=True, remove_unused_columns=False,
-        ),
+        args=TrainingArguments(**training_kwargs),
         train_dataset=Dataset.from_list(records),
+        eval_dataset=eval_dataset,
         data_collator=collate,
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume)
     trainer.save_model(args.out)
     processor.save_pretrained(args.out)
 

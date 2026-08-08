@@ -5,8 +5,8 @@ quantization on the LLM linear layers, reusing the SFT data pipeline.
 
     uv run --extra gpu python scripts/qat_torchao.py \
         --model runs/sft-2b-teacher-agree-merged \
-        --data data/distill/cord_train_teacher_*.jsonl --policy gold \
-        --steps 500 --out models/student2b-qat-int4
+        --data data/distill/cord_train_teacher_*.jsonl --image-root <train-data-mount> \
+        --policy gold --steps 500 --out models/student2b-qat-int4
 
 KNOWN UNRESOLVED ISSUES (flagged by review, not yet fixed -- needs a scope
 decision before this is trustworthy, not just a bug fix):
@@ -28,7 +28,25 @@ fake-quantizer, or reframing this as its own independent PTQ-style int8/int4
 point (evaluated via the HF runner, not exported to GGUF) rather than a QAT
 comparison against the deployment quantizer. Fixing #2 means saving the
 PRE-convert() fp16 weights (trained to be quantization-friendly) for GGUF
-export, not the post-convert() torchao-native tensors.
+export, not the post-convert() torchao-native tensors -- and even then,
+"evaluate via HF runner instead" only works if AutoModelForImageTextToText
+can actually reload the post-convert() checkpoint, which needs a real
+quantization_config wired up on the model config; unverified whether
+transformers' torchao integration supports that for this quantizer without
+hands-on GPU testing.
+
+DECISION (given a scarce, unrepeatable GPU budget -- see spec §9's own
+contingency: "QAT compute heavy -> PTQ carries the grid breadth"):
+**do not run this for the first compression-grid pass.** Both issues are
+real correctness risks, not cosmetic ones, and neither can be verified
+without spending GPU time to find out -- exactly the kind of uncertain bet
+a one-shot budget can't absorb. PTQ (quantize_ptq.py) and pruning (prune.py)
+have no equivalent open questions and should be run first. Revisit QAT only
+if the core grid succeeds with budget to spare, or document its omission
+plainly in the writeup -- "attempted, found the fake-quantizer didn't match
+the deployment quantizer, descoped to protect the core grid" is a more
+honest and more informative research narrative than a rushed, possibly-
+unusable result.
 """
 
 from __future__ import annotations
@@ -41,6 +59,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--data", nargs="+", required=True)
+    ap.add_argument("--image-root", required=True, help="see train_sft.py --image-root")
     ap.add_argument("--policy", default="gold", choices=["gold", "teacher", "teacher-agree"])
     ap.add_argument("--steps", type=int, default=500)
     ap.add_argument("--lr", type=float, default=2e-5)
@@ -60,7 +79,7 @@ def main() -> None:
     _sys.path.insert(0, str(_Path(__file__).parent.parent / "src"))
     from ledgerlens.schema import MAX_PIXELS, MIN_PIXELS
 
-    records = [build_messages(json.loads(line), args.policy)
+    records = [build_messages(json.loads(line), args.policy, image_root=args.image_root)
               for path in args.data for line in open(path)]
 
     # T4 (Turing, sm_75) has no bf16 support -- see train_sft.py for the same fix.

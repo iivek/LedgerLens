@@ -116,3 +116,14 @@ def test_message_structure_has_image_and_prompt():
     # target actually round-trips through the message as JSON
     target = json.loads(msg["messages"][1]["content"][0]["text"])
     assert target["vendor"] == "ACME"
+
+
+def test_image_root_resolves_relative_path():
+    # teacher_label.py stores paths relative to the train-data dataset root
+    # (a real bug: it used to store the absolute Kaggle mount path, which
+    # broke the instant training ran under a different account/session).
+    # Without --image-root, the raw relative path passes through unresolved.
+    rec = _rec("cord", CORD_GOLD, TEACHER_VALID)
+    assert build_messages(rec, "gold")["images"] == ["images/x.png"]
+    assert build_messages(rec, "gold", image_root="/mnt/train-data")["images"] == \
+        ["/mnt/train-data/images/x.png"]

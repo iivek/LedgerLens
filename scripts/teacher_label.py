@@ -43,6 +43,18 @@ def main() -> None:
     if args.limit:
         samples = samples[: args.limit]
 
+    # Sample.image is resolved to an absolute path at load time (see
+    # unified.py) -- but that absolute path is only valid on THIS machine/
+    # session (e.g. a Kaggle mount under a specific account's dataset copy).
+    # Store it relative to the split file's own directory instead, matching
+    # the unified format's own portability contract, so the labeled output
+    # doesn't hardcode which account/session produced it. This was a real
+    # bug: a labeled record's image path pointed at
+    # /kaggle/input/datasets/<account>/... and broke immediately if training
+    # later ran under a different account (exactly what the failover system
+    # is for) or off Kaggle entirely.
+    image_root = Path(args.split).resolve().parent
+
     # Resume-safe: a rerun with the same --out (e.g. a Kaggle session getting
     # killed by the quota/time cap mid-chunk, then restarted) previously
     # opened with "w" and silently clobbered whatever had already been
@@ -74,7 +86,8 @@ def main() -> None:
             n_agree += agrees
             f.write(json.dumps({
                 "id": s.id,
-                "image": str(s.image),
+                "image": str(s.image.relative_to(image_root)),
+                "source": s.source,
                 "prompt": PROMPT,
                 "teacher_raw": raw,
                 "teacher_json": pred.model_dump() if valid else None,
