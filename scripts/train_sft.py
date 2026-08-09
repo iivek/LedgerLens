@@ -236,9 +236,10 @@ def main() -> None:
                          f"found, e.g.: {missing}")
 
     eval_records = None
-    if args.eval_data and not args.smoke_test:
+    if args.eval_data:
         eval_image_root = args.eval_image_root or args.image_root
-        eval_records = load_records(args.eval_data, args.policy, eval_image_root)
+        eval_limit = args.smoke_test_n if args.smoke_test else None
+        eval_records = load_records(args.eval_data, args.policy, eval_image_root, limit=eval_limit)
         print(f"{len(eval_records)} eval samples")
 
     # Matches the eval-time pixel budget (hf_vlm.py/llamacpp deployment) so
@@ -279,14 +280,29 @@ def main() -> None:
         # compatibility, and a full forward/backward/save path -- everything
         # that could crash a multi-hour run -- in minutes. No save, no merge:
         # this checkpoint is throwaway, only the "did it crash" signal matters.
-        smoke_args = TrainingArguments(
+        # When --eval-data is given, this also runs one real evaluate() pass
+        # at the same per_device_eval_batch_size the real run will use --
+        # a prior real run OOM'd specifically inside prediction_step (eval
+        # forward), which this smoke test did not exercise at the time and
+        # so did not catch before an expensive multi-hour job hit it instead.
+        smoke_kwargs = dict(
             output_dir=args.out + "-smoke", max_steps=min(2, max(1, len(records))),
             per_device_train_batch_size=1, gradient_accumulation_steps=1,
             fp16=True, logging_steps=1, save_strategy="no", report_to=[],
             gradient_checkpointing=True, remove_unused_columns=False,
         )
-        Trainer(model=model, args=smoke_args, train_dataset=Dataset.from_list(records),
-               data_collator=collate).train()
+        eval_dataset = None
+        if eval_records is not None:
+            eval_dataset = Dataset.from_list(eval_records)
+            smoke_kwargs.update(eval_strategy="steps", eval_steps=1,
+                                per_device_eval_batch_size=1, eval_accumulation_steps=1)
+        smoke_trainer = Trainer(model=model, args=TrainingArguments(**smoke_kwargs),
+                                train_dataset=Dataset.from_list(records), eval_dataset=eval_dataset,
+                                data_collator=collate)
+        smoke_trainer.train()
+        if eval_dataset is not None:
+            smoke_trainer.evaluate()
+            print("=== SMOKE TEST: eval pass completed without error ===")
         print("=== SMOKE TEST PASSED: forward/backward/optimizer step completed without error ===")
         print("=== Re-run without --smoke-test for the real job ===")
         return
@@ -320,6 +336,17 @@ def main() -> None:
             save_strategy="steps", save_steps=args.save_steps,
             load_best_model_at_end=True, metric_for_best_model="eval_loss",
             save_total_limit=3,
+            # TrainingArguments defaults per_device_eval_batch_size to 8
+            # independently of --batch-size -- on a 14.56GB T4 already near
+            # capacity at train batch_size=1, an unset eval batch size
+            # silently 8x'd the eval forward pass and OOM'd mid-run (real
+            # incident: killed a ~1h17m real job at step 50/180, before the
+            # step-50 checkpoint could save, since HF evaluates before it
+            # saves at a shared eval/save step). eval_accumulation_steps=1
+            # additionally offloads eval logits to CPU after every batch
+            # instead of accumulating them on-GPU for the whole eval set.
+            per_device_eval_batch_size=args.batch_size,
+            eval_accumulation_steps=1,
         )
     else:
         training_kwargs["save_strategy"] = "epoch"
