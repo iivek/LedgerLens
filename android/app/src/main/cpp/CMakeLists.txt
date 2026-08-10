@@ -12,8 +12,9 @@ if(NOT EXISTS ${LLAMA_CPP_DIR}/CMakeLists.txt)
     message(FATAL_ERROR
         "llama.cpp not found at ${LLAMA_CPP_DIR}.\n"
         "Run (from the android/ directory):\n"
-        "  git submodule add https://github.com/ggml-org/llama.cpp third_party/llama.cpp\n"
-        "  git -C third_party/llama.cpp checkout <PINNED_TAG>   # see README.md\n")
+        "  git submodule add --depth 1 https://github.com/ggml-org/llama.cpp third_party/llama.cpp\n"
+        "  git -C third_party/llama.cpp fetch --depth 1 origin refs/tags/b10344:refs/tags/b10344\n"
+        "  git -C third_party/llama.cpp checkout b10344   # see README.md\n")
 endif()
 
 # Statically link llama/ggml/mtmd into our single libledgerlens.so.
@@ -46,6 +47,7 @@ target_include_directories(ledgerlens PRIVATE
 target_link_libraries(ledgerlens PRIVATE
     llama
     mtmd
-    common
+    llama-common # renamed from "common" upstream -- confirmed against the
+                 # pinned tag's common/CMakeLists.txt (`set(TARGET llama-common)`)
     android
     log)

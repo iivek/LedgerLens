@@ -1,9 +1,16 @@
 // LedgerLens JNI bridge around llama.cpp + mtmd (multimodal) for Qwen2-VL GGUF models.
 //
 // IMPORTANT: llama.cpp's public API — and the mtmd API in particular — moves fast.
-// This file is written against the mtmd public API as of mid-2025 (see android/README.md
-// for the pinned llama.cpp tag and a table of every symbol this file depends on).
-// If the build breaks here after a llama.cpp update, diff against:
+// This file is verified against llama.cpp tag b10344 (2026-08-10) -- every symbol
+// used below was checked directly against that tag's headers, not assumed; three
+// real breaking changes were found and fixed versus an earlier draft written
+// against a mid-2025 API: mtmd_context_params lost its `verbosity` field (use
+// mtmd_log_set() instead), mtmd_helper_bitmap_init_from_file() now returns a
+// mtmd_helper_bitmap_wrapper struct by value (with an extra `placeholder` bool
+// param) instead of a raw mtmd_bitmap*, and mtmd_input_text.text_len must be
+// set explicitly (a real bug even before this update: it was left uninitialized
+// and mtmd.cpp reads it directly). If the build breaks here after bumping the
+// submodule to a newer tag, diff against:
 //   third_party/llama.cpp/tools/mtmd/mtmd.h
 //   third_party/llama.cpp/tools/mtmd/mtmd-helper.h
 //   third_party/llama.cpp/tools/mtmd/mtmd-cli.cpp   (reference usage)
@@ -69,6 +76,10 @@ void ensure_backend_init() {
     static std::once_flag once;
     std::call_once(once, [] {
         llama_log_set(android_log_callback, nullptr);
+        // mtmd has its own log sink, separate from llama's -- without this,
+        // mtmd/vision-tower logs (image preprocessing, tokenization errors)
+        // never reach logcat at all.
+        mtmd_log_set(android_log_callback, nullptr);
         llama_backend_init();
     });
 }
@@ -120,11 +131,13 @@ Java_com_ledgerlens_app_LlamaBridge_loadModel(
     session->n_batch = (int32_t) cparams.n_batch;
 
     // --- multimodal projector (vision tower for Qwen2-VL) ---
+    // NOTE: mtmd_context_params no longer has a `verbosity` field (removed
+    // upstream) -- log level is controlled via mtmd_log_set() instead, wired
+    // up once in ensure_backend_init().
     mtmd_context_params mtmd_params = mtmd_context_params_default();
     mtmd_params.use_gpu       = false;
     mtmd_params.print_timings = false;
     mtmd_params.n_threads     = (int32_t) nThreads;
-    mtmd_params.verbosity     = GGML_LOG_LEVEL_INFO;
 
     session->mctx = mtmd_init_from_file(mmproj_path.c_str(), session->model, mtmd_params);
     if (session->mctx == nullptr) {
@@ -158,7 +171,13 @@ Java_com_ledgerlens_app_LlamaBridge_extract(
     llama_memory_clear(llama_get_memory(session->lctx), /*data=*/true);
 
     // --- load + preprocess the image ---
-    mtmd_bitmap * bitmap = mtmd_helper_bitmap_init_from_file(session->mctx, image_path.c_str());
+    // mtmd_helper_bitmap_init_from_file returns a wrapper struct by value now
+    // (used to return mtmd_bitmap* directly), with an extra `placeholder`
+    // param -- false here, we always have real image data, never a
+    // count-only placeholder bitmap.
+    mtmd_helper_bitmap_wrapper bitmap_wrapper =
+            mtmd_helper_bitmap_init_from_file(session->mctx, image_path.c_str(), /*placeholder=*/false);
+    mtmd_bitmap * bitmap = bitmap_wrapper.bitmap;
     if (bitmap == nullptr) {
         throw_runtime_exception(env, "Failed to load image: " + image_path);
         return nullptr;
@@ -167,8 +186,14 @@ Java_com_ledgerlens_app_LlamaBridge_extract(
     // --- tokenize prompt (text mixed with the media marker) ---
     // The prompt must contain mtmd_default_marker() ("<__media__>") where the image goes;
     // the Kotlin side is responsible for that.
-    mtmd_input_text input_text;
+    // Zero-init, then set every field explicitly: mtmd_input_text is a plain
+    // C struct with no default member initializers, so a bare declaration
+    // leaves `text_len` as uninitialized stack garbage. mtmd.cpp uses it
+    // directly (`input_text.assign(text->text, text->text_len)`), so this was
+    // a real out-of-bounds/UB bug independent of the API-version drift below.
+    mtmd_input_text input_text = {};
     input_text.text          = prompt.c_str();
+    input_text.text_len      = prompt.size();
     input_text.add_special   = true;  // add BOS if the model uses one
     input_text.parse_special = true;  // parse <|im_start|> etc. as special tokens
 

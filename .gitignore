@@ -16,8 +16,12 @@ models/
 runs/
 
 # External checkout for GGUF conversion (convert_hf_to_gguf.py) -- cloned
-# on demand, not our code, never commit.
-third_party/
+# on demand, not our code, never commit. Root-anchored (leading /): a bare
+# "third_party/" would also match android/third_party/, which is a real,
+# intentionally-tracked git submodule (llama.cpp for the JNI build), not an
+# ad-hoc clone -- those two serve different purposes and must not share a
+# gitignore rule.
+/third_party/
 
 # results/*.csv is NOT ignored: it's the small, versioned provenance record
 # (one row per Pareto-grid variant) that every README/writeup number must trace

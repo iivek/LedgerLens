@@ -35,24 +35,33 @@ All commands run from this `android/` directory.
 ### 1. Add llama.cpp as a git submodule
 
 ```sh
-git submodule add https://github.com/ggml-org/llama.cpp third_party/llama.cpp
-git -C third_party/llama.cpp checkout <PINNED_TAG>
+git submodule add --depth 1 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
+git -C third_party/llama.cpp fetch --depth 1 origin refs/tags/b10344:refs/tags/b10344
+git -C third_party/llama.cpp checkout b10344
 ```
 
 > **PINNED TAG — READ THIS.** llama.cpp's public API, and the `mtmd` API in particular,
 > moves fast and breaks without notice. The JNI code in
-> `app/src/main/cpp/ledgerlens_jni.cpp` was written against the mtmd public API as of
-> **mid-2025** (post the May 2025 `libmtmd` refactor that introduced `mtmd_init_from_file`
-> / `mtmd_tokenize` / `mtmd_helper_eval_chunks` and the `<__media__>` marker, and post the
-> 2025 `llama_memory_*` rename). Pin a tag from that window — e.g. a `bXXXX` release tag
-> from **June–July 2025** — validate the build once, and record the exact tag here:
+> `app/src/main/cpp/ledgerlens_jni.cpp` is currently pinned to **tag `b10344`
+> (2026-08-10)** — every mtmd/llama.h symbol it calls was checked directly against
+> that tag's headers (not assumed), and three real breaking changes versus an
+> earlier mid-2025 draft were found and fixed this way: `mtmd_context_params`
+> dropped its `verbosity` field, `mtmd_helper_bitmap_init_from_file()` now returns
+> a wrapper struct by value instead of a raw pointer, and `mtmd_input_text.text_len`
+> must be set explicitly (was left uninitialized — a real bug, not just drift).
+> See the file's own header comment for specifics.
 >
 > ```
-> VALIDATED AGAINST: llama.cpp tag ________ (fill in after first successful build)
+> VALIDATED AGAINST: llama.cpp tag b10344 -- BUILD CONFIRMED 2026-08-10.
+> `./gradlew assembleDebug` succeeds end to end (native CMake/NDK compile +
+> link + Kotlin + dex + package), producing a real app-debug.apk. Not yet
+> confirmed: install + run on a physical device (needs `adb` + a connected
+> phone) and actual model inference through the built JNI bridge.
 > ```
 >
-> If you check out a newer master and the native build fails, see
-> [Troubleshooting](#troubleshooting) — API drift is the expected failure mode.
+> If you bump the submodule to a newer tag and the native build fails, see
+> [Troubleshooting](#troubleshooting) — API drift is the expected failure mode; diff
+> the three symbols above first, they're the ones most likely to have moved again.
 
 ### 2. Generate the Gradle wrapper
 
