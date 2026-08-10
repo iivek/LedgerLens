@@ -16,7 +16,9 @@ calibration and get dropped. Caught by independent review, fixed here.
 
     uv run --extra gpu python scripts/prune.py \
         --model runs/sft-2b-teacher-agree-merged --drop 6 \
-        --calib data/distill/cord_train_teacher_0_200.jsonl --out models/student2b-prune6
+        --calib data/distill/cord_train_teacher_0_200.jsonl \
+        --image-root /kaggle/input/datasets/<account>/ledgerlens-train-data \
+        --out models/student2b-prune6
     # then: python scripts/train_sft.py --student models/student2b-prune6 ... (recovery)
 """
 
@@ -32,6 +34,10 @@ def main() -> None:
     ap.add_argument("--model", required=True)
     ap.add_argument("--drop", type=int, default=6, help="number of decoder layers to remove")
     ap.add_argument("--calib", required=True, help="teacher_label.py jsonl for importance estimation")
+    ap.add_argument("--image-root", required=True,
+                    help="directory each --calib record's relative image path resolves against "
+                         "-- teacher_label.py stores image paths relative to the mounted "
+                         "train-data root, not absolute, same convention as train_sft.py")
     ap.add_argument("--n-calib", type=int, default=64)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True)
@@ -52,8 +58,17 @@ def main() -> None:
     # qat_torchao.py, missed here in an earlier pass. Also missing here
     # originally: min/max_pixels, which left this on whichever default the
     # library ships, diverging from every other stage's pixel budget.
+    #
+    # device_map="auto" is wrong here, confirmed by a real crash: Kaggle's
+    # "NvidiaTeslaT4" machine shape provides two physical T4s, and "auto"
+    # sharded this ~2.2B model's decoder layers across both -- the importance
+    # hook's `hin`/`hout` (input/output of one layer) ended up on different
+    # cuda: devices, crashing cosine_similarity. The model fits fp16 on a
+    # single T4 with room to spare (its own merged checkpoint is 4.4GB), so
+    # there's no reason to shard it; pin to one GPU instead of teaching the
+    # hook to move tensors across a split it doesn't need.
     model = AutoModelForImageTextToText.from_pretrained(
-        args.model, torch_dtype=torch.float16, device_map="auto"
+        args.model, torch_dtype=torch.float16, device_map={"": 0}
     )
     processor = AutoProcessor.from_pretrained(args.model, min_pixels=MIN_PIXELS, max_pixels=MAX_PIXELS)
     llm = model.model.language_model  # Qwen2-VL: text decoder stack
@@ -86,7 +101,7 @@ def main() -> None:
     with torch.inference_mode():
         for rec in calib_recs:
             messages = [{"role": "user", "content": [
-                {"type": "image", "image": f"file://{rec['image']}"},
+                {"type": "image", "image": f"file://{_Path(args.image_root) / rec['image']}"},
                 {"type": "text", "text": rec["prompt"]},
             ]}]
             text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -115,8 +130,15 @@ def main() -> None:
         model.config.num_hidden_layers = len(kept)
 
     model.save_pretrained(args.out)
-    tokenizer.save_pretrained(args.out)
-    AutoProcessor.from_pretrained(args.model).save_pretrained(args.out)
+    # Save the processor instance already in use (min/max_pixels set above),
+    # not a freshly re-fetched default one -- otherwise the saved checkpoint's
+    # preprocessor_config.json silently reverts to library defaults, diverging
+    # from the pixel budget this model was actually calibrated/will be
+    # recovery-tuned/evaluated under. Also fixes a real crash: `tokenizer` was
+    # referenced here but never defined anywhere in this script (would have
+    # failed with NameError right after the expensive calibration forward
+    # passes and layer-drop already completed).
+    processor.save_pretrained(args.out)
     with open(f"{args.out}/prune_report.json", "w") as f:
         json.dump({"dropped_layers": drop_idx, "importance": importance.tolist()}, f, indent=2)
     print(f"pruned model ({n_layers}->{len(kept)} layers) -> {args.out}; run recovery SFT next")
