@@ -2,7 +2,7 @@
 
 **Offline, on-device invoice & receipt extraction.** Photo of a receipt in → structured JSON out (vendor, date, currency, total, tax, line items) — running privately on a phone, no network, no cloud. Because it must run on a mid-range Android device, model compression (distillation → quantization → pruning) is a *requirement of the use case*, and the headline deliverable is the accuracy-vs-size/latency **Pareto grid**.
 
-> **Status: Weekend 1 baselines only — no distillation/compression has happened yet.** These are stock, off-the-shelf Qwen2-VL-2B numbers, measured before any of *this project's* training. Every number below comes straight from `results/results.csv`, produced by `uv run ledgerlens eval` — nothing here is hand-computed.
+> **Status: Weekend 2 — LoRA-distilled Qwen2-VL-2B is trained, evaluated (fp16 and deployment-format GGUF), and beats both the stock 2B baseline and the Qwen2.5-VL-7B teacher.** Weekend 3 (PTQ/pruning compression grid) is in progress. Every number below comes straight from `results/results.csv` / `results/efficiency.csv`, produced by `uv run ledgerlens eval` / `scripts/bench_efficiency.py` — nothing here is hand-computed.
 
 ## Baseline: stock Qwen2-VL-2B, zero fine-tuning
 
@@ -36,7 +36,35 @@ The Kaggle SROIE mirror (`urbikn/sroie-datasetv2`) is a re-split of the same und
 
 A 20-point gap. Important nuance: **this is the stock, zero-fine-tuned model** — it has never trained on any SROIE data, so this isn't training-set memorization in the usual sense. The more likely explanation is that vendors repeating across train/test tend to be larger, more common chains, and the model's own general-purpose pretraining gives it an edge recognizing familiar branding — an edge that doesn't extend to rarer, less-common vendors. Either way, the full-test vendor number is not a reliable estimate of performance on a vendor the model hasn't effectively seen before, whatever the cause. **This check becomes essential once real fine-tuning happens on `sroie_train`** — at that point the same gap could additionally reflect genuine training-set memorization, and vendor-disjoint scoring is how that gets caught rather than published as a clean win.
 
-None of this involves the teacher (Qwen2.5-VL-7B), SFT, PTQ/QAT beyond stock GGUF quantization, or pruning yet — those are Weekends 2–3. **The vision tower (mmproj, 1.33 GB) has not been quantized in either variant above and is larger than the 4-bit LLM (0.99 GB)** — the 940MB/1.5GB figures describe the LLM only; deployed footprint including mmproj is 2.32 GB (Q4) vs 2.98 GB (Q8), a much smaller ratio than the LLM-only numbers suggest. This is also the leading candidate explanation for why LLM-only quantization shows so little effect above.
+**The vision tower (mmproj, 1.33 GB) has not been quantized in either variant above and is larger than the 4-bit LLM (0.99 GB)** — the 940MB/1.5GB figures describe the LLM only; deployed footprint including mmproj is 2.32 GB (Q4) vs 2.98 GB (Q8), a much smaller ratio than the LLM-only numbers suggest. This is also the leading candidate explanation for why LLM-only quantization shows so little effect above.
+
+## Weekend 2: distillation result
+
+LoRA-SFT of the student (Qwen2-VL-2B) on `teacher-agree`-blended targets (see [CLAUDE.md](CLAUDE.md) — a field the source dataset annotates is checked against gold per-field before trusting the teacher; an unannotated field always takes the teacher's read, since gold is always null there). Trained on Kaggle T4 ×2 (not a rented 24 GB box — see below), checkpoint selected by `eval_loss` on a held-out `cord_val` split, merged, then evaluated two ways: served fp16 via `transformers` (Kaggle T4) and exported to the actual deployment format (GGUF Q4_K_M + f16 mmproj, served via `llama-server` on the M1 Pro — the same runtime the phone uses).
+
+| Variant | Split (n) | JSON valid | Total EM | Field EM (mean) | Line-item F1 | Mean latency |
+|---|---|---|---|---|---|---|
+| Teacher 7B (4-bit, zero-shot) | CORD (100) | 97.0% | 85.0% | 86.0% | 87.7% | 29.3s |
+| Teacher 7B (4-bit, zero-shot) | SROIE (347) | 96.5% | 94.2% | 90.1% | — | 38.5s |
+| **Distilled 2B, fp16** | CORD (100) | **100%** | **92.0%** | **93.5%** | **94.7%** | **10.0s** |
+| **Distilled 2B, fp16** | SROIE (347) | **100%** | **96.8%** | **94.3%** | — | **11.0s** |
+| **Distilled 2B, GGUF Q4_K_M** | CORD (100) | **100%** | **91.0%** | **92.0%** | **93.8%** | **11.8s** |
+| **Distilled 2B, GGUF Q4_K_M** | SROIE (347) | **100%** | **96.5%** | **95.2%** | — | **14.7s** |
+
+**Read this correctly, not as "a 2B model out-reasoning a 7B":** the teacher above is zero-shot and 4-bit; the student is fine-tuned directly on in-distribution CORD/SROIE data with the field-level blend giving it *gold-quality supervision* on every field those datasets annotate — something the teacher never had. This is task specialization beating general-purpose zero-shot inference, which is the expected, intended outcome of distillation, not a surprising capability result. All rows above are single unpaired runs; a proper paired-significance comparison (student vs. teacher, GGUF vs. fp16) has not been run yet — treat the ranking as directionally real (backed by very large, consistent gaps: 7-12pp) but not yet statistically confirmed at the field level.
+
+**Quantization vs. runtime confound:** the fp16 rows ran on HF/Kaggle at a fixed `max_pixels` budget; the GGUF rows ran on llama.cpp/M1 with images sent at native resolution (see [CLAUDE.md](CLAUDE.md) on `-c` sizing). The ~0.3-1.1pp gap between them is therefore quantization *and* runtime *and* image-resolution-handling conflated, not a clean int4-vs-fp16 delta — the gap being small either way is good news, but isolating the quantization-only effect needs an f16/Q8_0/Q4_K_M sweep run entirely within the GGUF/llama.cpp runtime (not yet done).
+
+**SROIE vendor-disjoint check, now with real fine-tuning in the picture:** SROIE train/test share 72.6% of vendor strings and 7 byte-identical images (see [CLAUDE.md](CLAUDE.md)) — this is exactly the setup where genuine training-set memorization, not just familiarity from pretraining, becomes possible. Rescored on the 95 test receipts whose vendor never appears in `sroie_train`:
+
+| Variant | Total EM (full, n=347) | Total EM (vendor-disjoint, n=95) | Vendor EM (disjoint) | Date EM (disjoint) |
+|---|---|---|---|---|
+| Distilled 2B, fp16 | 96.8% | 92.6% | 76.8% | 93.7% |
+| Distilled 2B, GGUF Q4_K_M | 96.5% | 91.6% | 75.8% | 94.7% |
+
+A real but modest drop (~4-5pp on total EM), and still well above the *stock* model's vendor-disjoint numbers (61-62% vendor EM, 88-91% total EM — see the stock table above). The model isn't just memorizing vendor layouts from training; it retains most of its accuracy on vendors it never saw during fine-tuning.
+
+None of PTQ (AWQ/GPTQ), QAT, or pruning-with-recovery is complete yet — pruning is in progress; AWQ/GPTQ/QAT have not been attempted. Those are the remaining Weekend 3 compression-grid points.
 
 **On latency vs. the spec's "~1-2 seconds on a phone" target:** these numbers (13-18s mean, up to 40-49s p95) are already far above that, and they're on a **GPU-accelerated M1 Pro** — the current Android JNI code runs **CPU-only**. A mid-range Android phone's CPU is meaningfully slower than an M1 Pro's GPU, so on-device latency today is very likely in the tens of seconds to low minutes, not 1-2 seconds. The compression plan as designed (int4 LLM + pruning) targets a ~1.5-2x speedup, which does not close a gap of this size — most of the latency is plausibly vision-token prefill (the mmproj is unquantized and image-token budget isn't yet a compression axis). The 1-2s target needs to be either restated honestly or the plan needs to add image-resolution/token-budget reduction and GPU delegation as explicit levers, before this claim goes in front of anyone evaluating compression work.
 
@@ -104,14 +132,16 @@ CORD and SROIE are **research-use** datasets; model weights trained on them are 
 
 **Personal holdout** (spec §4 — the honest "does it actually work" set, ~50 real receipts, never trained on): drop photos in `data/personal_holdout/raw/`, run `uv run ledgerlens convert personal` once to scaffold a blank label JSON per photo in `data/personal_holdout/labels/` (matching the `Extraction` schema), hand-fill each with what the receipt actually says, then rerun the same command to build `data/personal_holdout.jsonl`. A typo'd field name fails loudly (not silently null) since these are hand-typed. Never committed (`data/personal_holdout/` is gitignored); redact or exclude before publishing anything derived from it.
 
-## Training & compression (GPU box, 24 GB)
+## Training & compression (Kaggle T4 ×2, free tier — not a rented 24 GB box)
+
+Every GPU-side script runs on Kaggle's free T4 tier via chunked kernel pushes (one session can't fit a multi-hour job); see [CLAUDE.md](CLAUDE.md) for the account-pooling/driver details. Status: `teacher_label.py` → `train_sft.py` → `export_gguf.py` done and evaluated (see the distillation table above); `prune.py` in progress; `quantize_ptq.py` (AWQ/GPTQ) and `qat_torchao.py` not yet attempted (the latter has a documented decision not to spend one-shot GPU budget on it until its output is loadable — see the script's docstring).
 
 ```sh
 python scripts/teacher_label.py --split data/processed/cord_train.jsonl --out data/distill/cord_train_teacher.jsonl
 python scripts/train_sft.py --data data/distill/*.jsonl --policy teacher-agree --out runs/sft-2b --merge
 python scripts/quantize_ptq.py awq  --model runs/sft-2b-merged --out models/student2b-awq-int4
 python scripts/qat_torchao.py       --model runs/sft-2b-merged --data data/distill/cord_train_teacher.jsonl --out models/student2b-qat
-python scripts/prune.py             --model runs/sft-2b-merged --drop 6 --calib data/distill/cord_train_teacher.jsonl --out models/student2b-prune6
+python scripts/prune.py             --model runs/sft-2b-merged --drop 6 --calib data/distill/cord_train_teacher.jsonl --image-root <train-data-mount> --out models/student2b-prune6
 python scripts/export_gguf.py       --model runs/sft-2b-merged --name ledgerlens
 python scripts/bench_efficiency.py gguf --model models/gguf/ledgerlens-q4_k_m.gguf --mmproj models/gguf/mmproj-ledgerlens-f16.gguf --image <receipt.jpg> --tag student2b-q4km --host laptop-cpu
 ```
