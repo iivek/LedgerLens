@@ -15,6 +15,10 @@ data/personal_holdout/
 models/
 runs/
 
+# External checkout for GGUF conversion (convert_hf_to_gguf.py) -- cloned
+# on demand, not our code, never commit.
+third_party/
+
 # results/*.csv is NOT ignored: it's the small, versioned provenance record
 # (one row per Pareto-grid variant) that every README/writeup number must trace
 # back to. Only the large per-sample dumps in runs/ are excluded above.

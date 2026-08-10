@@ -1,5 +1,7 @@
-tag,runner,split,host,timestamp,size_gb,peak_ram_gb,tok_s,e2e_s,e2e_cold_s
-sft2b-teacher-agree-cord_test,/kaggle/input/datasets/johannvekstr/ledgerlens-sft2b-teacher-agree,,kaggle-t4,2026-08-10T16:08:25,4.4181,2.2544,18.2722,5.0898,7.6551
-sft2b-teacher-agree-sroie_test,/kaggle/input/datasets/johannvekstr/ledgerlens-sft2b-teacher-agree,,kaggle-t4,2026-08-10T16:09:05,4.4181,2.2968,17.6004,5.9098,6.6741
-teacher7b-q4-cord_test,Qwen/Qwen2.5-VL-7B-Instruct,,kaggle-t4,2026-08-10T16:12:56,nan,1.9737,6.6710,15.4526,15.1374
-teacher7b-q4-sroie_test,Qwen/Qwen2.5-VL-7B-Instruct,,kaggle-t4,2026-08-10T16:15:04,nan,2.4171,6.3303,20.2390,20.1777
+tag,runner,split,host,timestamp,size_gb,peak_ram_gb,tok_s,e2e_s,e2e_cold_s,mmproj_gb,notes
+sft2b-teacher-agree-cord_test,/kaggle/input/datasets/johannvekstr/ledgerlens-sft2b-teacher-agree,,kaggle-t4,2026-08-10T16:08:25,4.4181,2.2544,18.2722,5.0898,7.6551,,
+sft2b-teacher-agree-sroie_test,/kaggle/input/datasets/johannvekstr/ledgerlens-sft2b-teacher-agree,,kaggle-t4,2026-08-10T16:09:05,4.4181,2.2968,17.6004,5.9098,6.6741,,
+teacher7b-q4-cord_test,Qwen/Qwen2.5-VL-7B-Instruct,,kaggle-t4,2026-08-10T16:12:56,nan,1.9737,6.6710,15.4526,15.1374,,
+teacher7b-q4-sroie_test,Qwen/Qwen2.5-VL-7B-Instruct,,kaggle-t4,2026-08-10T16:15:04,nan,2.4171,6.3303,20.2390,20.1777,,
+sft2b-teacher-agree-q4km-cord,sft2b-teacher-agree-q4_k_m.gguf,,macbook-m1pro-metal,2026-08-10T21:20:26,0.9860,3.5049,21.7890,3.4102,4.2386,1.3317,"tok_s computed from harness predictions.jsonl (real per-sample latency_s x tokenizer count on the full test split, not the 4-repeat CLI sample) -- llama-mtmd-cli on this build never prints a tokens-per-second line, even with --perf, so bench_efficiency.py gguf mode cannot measure it directly."
+sft2b-teacher-agree-q4km-sroie,sft2b-teacher-agree-q4_k_m.gguf,,macbook-m1pro-metal,2026-08-10T21:20:44,0.9860,3.5234,16.7960,4.3847,4.2603,1.3317,"tok_s computed from harness predictions.jsonl (real per-sample latency_s x tokenizer count on the full test split, not the 4-repeat CLI sample) -- llama-mtmd-cli on this build never prints a tokens-per-second line, even with --perf, so bench_efficiency.py gguf mode cannot measure it directly."

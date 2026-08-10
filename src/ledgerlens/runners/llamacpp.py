@@ -4,10 +4,21 @@ This is the edge-deployment path: the same GGUF + mmproj that ships to the phone
 served locally, e.g.:
 
     llama-server -m models/ledgerlens-q4_k_m.gguf --mmproj models/mmproj-f16.gguf \
-        -c 4096 --port 8080
+        -c 16384 --port 8080
 
 Using the server (rather than in-process bindings) keeps the harness measuring the
 same runtime the phone uses, and needs no Python GPU deps.
+
+-c must be generous, not the llama-server default of 4096: prompt + a large
+receipt image's dynamic-resolution image tokens + the JSON response can exceed
+4096 (confirmed directly -- some real samples needed 4148+). generate() below
+sends images at native resolution with no resize step, so image-token count
+scales with photo resolution, not a fixed budget; going in under-provisioned
+doesn't fail loudly here, it 400s per-sample, which the harness (correctly)
+records as a scoring failure rather than a crash -- so an undersized -c quietly
+shows up as degraded accuracy/JSON-validity, not an obvious error. Verify
+against actual samples (this project's SROIE split has a documented minority
+of oversized full-page scans) rather than assuming 4096 is enough.
 """
 
 from __future__ import annotations

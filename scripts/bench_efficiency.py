@@ -83,10 +83,20 @@ def bench_gguf(args: argparse.Namespace) -> None:
         print(f"run {i + 1}/{args.repeats}: e2e={e2e:.2f}s tok/s={tok_s}")
 
     warm = runs[1:] or runs  # first run pays model load + mmap page-in
+    tok_s_vals = [t for _, t in warm if t]
+    # Some llama-mtmd-cli builds (this is an "experimental CLI for testing
+    # multimodal capability" per its own startup warning) never print a
+    # "tokens per second" line at all, even with --perf -- confirmed directly,
+    # not assumed. Silently averaging an empty list to 0.0 would record a
+    # fabricated "the model produces zero tokens/sec" in results/efficiency.csv
+    # instead of an honest "this CLI build didn't report it."
+    if not tok_s_vals:
+        print("WARNING: no tok/s parsed from llama-mtmd-cli output on this build "
+              "-- recording tok_s as nan rather than a fake 0.0")
     _row(args.tag, args.host, runner=Path(args.model).name,
          size_gb=size_gb, mmproj_gb=mmproj_gb,
          peak_ram_gb=peak_ram_gb or float("nan"),
-         tok_s=sum(t for _, t in warm if t) / max(1, len([t for _, t in warm if t])),
+         tok_s=(sum(tok_s_vals) / len(tok_s_vals)) if tok_s_vals else float("nan"),
          e2e_s=sum(e for e, _ in warm) / len(warm),
          e2e_cold_s=runs[0][0])
 
