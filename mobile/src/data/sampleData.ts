@@ -1,40 +1,11 @@
-// Placeholder data matching the design sketch exactly, until real on-device
-// extraction + local storage (op-sqlite) are wired up. Kept as one module so
-// it's obvious what's sample vs. real once storage lands.
+// Seed data: inserted into the real op-sqlite-backed store on first launch
+// only (see storage/receipts.ts:seedIfEmpty), so the app never opens to a
+// blank ledger, but everything after that first seed is genuinely persisted
+// user data, not this static array.
 
-export interface LineItem {
-  description: string;
-  qty: number;
-  unitPrice: number;
-  total: number;
-}
+import type { Receipt } from '../types';
 
-export interface Receipt {
-  id: string;
-  vendor: string;
-  date: string; // ISO
-  currency: string;
-  total: number;
-  tax: number;
-  category: string;
-  lineItems: LineItem[];
-}
-
-export const CATEGORIES = [
-  'Food & Drink',
-  'Groceries',
-  'Home',
-  'Health',
-  'Transport',
-] as const;
-
-export const CATEGORY_ICON: Record<string, string> = {
-  'Food & Drink': '☕',
-  Groceries: '🛒',
-  Home: '⚒',
-  Health: '✚',
-  Transport: '⛽',
-};
+export type { LineItem, Receipt } from '../types';
 
 export const sampleReceipts: Receipt[] = [
   {
@@ -105,21 +76,3 @@ export const sampleReceipts: Receipt[] = [
   },
 ];
 
-export const monthlyBudget = 600;
-
-export function totalSpent(receipts: Receipt[]): number {
-  return receipts.reduce((sum, r) => sum + r.total, 0);
-}
-
-export function categoryBreakdown(
-  receipts: Receipt[],
-): { category: string; amount: number; pct: number }[] {
-  const total = totalSpent(receipts);
-  const byCategory = new Map<string, number>();
-  for (const r of receipts) {
-    byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.total);
-  }
-  return [...byCategory.entries()]
-    .map(([category, amount]) => ({ category, amount, pct: total ? amount / total : 0 }))
-    .sort((a, b) => b.amount - a.amount);
-}

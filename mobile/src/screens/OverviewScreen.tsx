@@ -2,8 +2,10 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card, LocalBadge, Money, SectionLabel } from '../components/Primitives';
-import { categoryBreakdown, sampleReceipts } from '../data/sampleData';
+import { categoryBreakdown } from '../utils/receiptMath';
+import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
 
@@ -38,10 +40,17 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 
 export default function OverviewScreen() {
   const { colors } = useTheme();
-  const breakdown = categoryBreakdown(sampleReceipts);
+  const { receipts, refresh } = useReceiptsStore();
+  useFocusEffect(
+    React.useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const breakdown = categoryBreakdown(receipts);
   const delta = ((TREND[TREND.length - 1] - TREND[TREND.length - 2]) / TREND[TREND.length - 2]) * 100;
   const vendorTotals = new Map<string, { amount: number; visits: number }>();
-  for (const r of sampleReceipts) {
+  for (const r of receipts) {
     const cur = vendorTotals.get(r.vendor) ?? { amount: 0, visits: 0 };
     vendorTotals.set(r.vendor, { amount: cur.amount + r.total, visits: cur.visits + 1 });
   }

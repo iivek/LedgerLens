@@ -1,15 +1,12 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card, LocalBadge, Money, SectionLabel } from '../components/Primitives';
 import { DonutChart } from '../components/DonutChart';
-import {
-  CATEGORY_ICON,
-  categoryBreakdown,
-  monthlyBudget,
-  sampleReceipts,
-  totalSpent,
-} from '../data/sampleData';
+import { CATEGORY_ICON, monthlyBudget } from '../constants';
+import { categoryBreakdown, totalSpent } from '../utils/receiptMath';
+import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
 
@@ -17,10 +14,20 @@ const LEGEND_COLORS = ['moss', 'ochre', 'mossDeep', 'oxblood', 'lineStrong'] as 
 
 export default function DashboardScreen() {
   const { colors } = useTheme();
-  const spent = totalSpent(sampleReceipts);
-  const budgetPct = Math.min(spent / monthlyBudget, 1);
-  const breakdown = categoryBreakdown(sampleReceipts);
-  const recent = [...sampleReceipts].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const { receipts, refresh } = useReceiptsStore();
+  // Refetch whenever this tab regains focus -- a receipt saved on the Scan
+  // tab wouldn't otherwise appear here until some other state change
+  // happened to re-render this screen.
+  useFocusEffect(
+    React.useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const spent = totalSpent(receipts);
+  const budgetPct = monthlyBudget > 0 ? Math.min(spent / monthlyBudget, 1) : 0;
+  const breakdown = categoryBreakdown(receipts);
+  const recent = [...receipts].sort((a, b) => (a.date < b.date ? 1 : -1));
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.paperRaised }} edges={['top']}>

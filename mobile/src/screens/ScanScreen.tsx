@@ -8,24 +8,29 @@ import {
   usePhotoOutput,
 } from 'react-native-vision-camera';
 import { Card, LocalBadge, Money, SectionLabel } from '../components/Primitives';
-import { CATEGORIES, sampleReceipts } from '../data/sampleData';
+import { CATEGORIES } from '../constants';
+import { sampleReceipts } from '../data/sampleData';
+import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, radius, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
 
 // The Trader Joe's sample receipt stands in for a real extraction result
 // until llama.rn is wired up (next step) -- capturing a real photo already
-// works below, it's just not fed through the model yet.
-const STUB_RESULT = sampleReceipts[1];
+// works below and the save-to-ledger path below is real, it's just the
+// vendor/line-items/total shown here that are canned, not read from the photo.
+const STUB_EXTRACTION = sampleReceipts[1];
 
 export default function ScanScreen() {
   const { colors } = useTheme();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const photoOutput = usePhotoOutput({ quality: 0.9 });
+  const { save } = useReceiptsStore();
 
   const [capturedPath, setCapturedPath] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -44,9 +49,26 @@ export default function ScanScreen() {
     }
   }
 
-  const visibleItems = STUB_RESULT.lineItems.slice(0, 4);
-  const hiddenCount = STUB_RESULT.lineItems.length - visibleItems.length;
-  const subtotal = STUB_RESULT.total - STUB_RESULT.tax;
+  async function onSave() {
+    if (!category) return; // button is disabled in this state, belt-and-braces
+    setSaving(true);
+    try {
+      await save({
+        ...STUB_EXTRACTION,
+        id: `receipt-${Date.now()}`,
+        date: new Date().toISOString().slice(0, 10),
+        category,
+      });
+      setCapturedPath(null);
+      setCategory(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const visibleItems = STUB_EXTRACTION.lineItems.slice(0, 4);
+  const hiddenCount = STUB_EXTRACTION.lineItems.length - visibleItems.length;
+  const subtotal = STUB_EXTRACTION.total - STUB_EXTRACTION.tax;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.paperRaised }} edges={['top']}>
@@ -89,15 +111,15 @@ export default function ScanScreen() {
         {capturedPath && (
           <Card>
             <Text style={[styles.vendor, { color: colors.ink, fontFamily: fonts.display }]}>
-              {STUB_RESULT.vendor}
+              {STUB_EXTRACTION.vendor}
             </Text>
             <Text style={{ color: colors.inkFaint, fontSize: 11, marginBottom: 12 }}>
-              {new Date(STUB_RESULT.date).toLocaleDateString('en-US', {
+              {new Date().toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
               })}{' '}
-              · {STUB_RESULT.currency}
+              · {STUB_EXTRACTION.currency}
             </Text>
 
             {visibleItems.map((li, i) => (
@@ -123,11 +145,11 @@ export default function ScanScreen() {
               </View>
               <View style={styles.totalsRow}>
                 <Text style={{ color: colors.inkSoft, fontSize: 12 }}>Tax</Text>
-                <Money value={STUB_RESULT.tax} size={12} />
+                <Money value={STUB_EXTRACTION.tax} size={12} />
               </View>
               <View style={styles.totalsRow}>
                 <Text style={{ color: colors.ink, fontSize: 15 }}>Total</Text>
-                <Money value={STUB_RESULT.total} size={15} emphasis />
+                <Money value={STUB_EXTRACTION.total} size={15} emphasis />
               </View>
             </View>
 
@@ -157,10 +179,14 @@ export default function ScanScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: colors.moss }]}
-              onPress={() => setCapturedPath(null)}>
+              style={[
+                styles.saveBtn,
+                { backgroundColor: colors.moss, opacity: category && !saving ? 1 : 0.5 },
+              ]}
+              disabled={!category || saving}
+              onPress={onSave}>
               <Text style={{ color: colors.paperRaised, fontWeight: '700', fontSize: 13.5 }}>
-                Save to ledger
+                {saving ? 'Saving…' : category ? 'Save to ledger' : 'Pick a category to save'}
               </Text>
             </TouchableOpacity>
           </Card>
