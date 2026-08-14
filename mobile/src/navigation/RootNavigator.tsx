@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import DashboardScreen from '../screens/DashboardScreen';
 import ScanScreen from '../screens/ScanScreen';
 import OverviewScreen from '../screens/OverviewScreen';
@@ -27,7 +28,7 @@ export type TabParamList = {
 // screen (tabs hidden) from either Dashboard's "Recent" list or Overview's
 // vendor list, without giving each tab its own duplicate detail stack.
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<TabParamList>;
   ReceiptDetail: { id: string };
 };
 
@@ -60,7 +61,10 @@ function MainTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.moss,
         tabBarInactiveTintColor: colors.inkFaint,
-        tabBarStyle: { backgroundColor: colors.paperRaised, borderTopColor: colors.line },
+        tabBarStyle: {
+          backgroundColor: colors.paperRaised,
+          borderTopColor: colors.line,
+        },
         tabBarIcon: () => null,
         // Plain string, not JSX -- bottom-tabs wraps a returned string in its
         // own styled <Text> automatically; returning a bare text Fragment
@@ -69,11 +73,16 @@ function MainTabs() {
         tabBarLabel: `${TAB_ICON[route.name as keyof TabParamList]} ${
           route.name === 'SettingsStack' ? 'Settings' : route.name
         }`,
-      })}>
+      })}
+    >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Scan" component={ScanScreen} />
       <Tab.Screen name="Overview" component={OverviewScreen} />
-      <Tab.Screen name="SettingsStack" component={SettingsStackNavigator} options={{ title: 'Settings' }} />
+      <Tab.Screen
+        name="SettingsStack"
+        component={SettingsStackNavigator}
+        options={{ title: 'Settings' }}
+      />
     </Tab.Navigator>
   );
 }

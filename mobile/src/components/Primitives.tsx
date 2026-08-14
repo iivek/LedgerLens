@@ -17,7 +17,8 @@ export function Card({
         styles.card,
         { backgroundColor: colors.paper, borderColor: colors.line },
         style,
-      ]}>
+      ]}
+    >
       {children}
     </View>
   );
@@ -44,7 +45,8 @@ export function Money({
         fontSize: size,
         fontWeight: emphasis ? '700' : '400',
         color: colors.ink,
-      }}>
+      }}
+    >
       {currency}
       {value.toFixed(2)}
     </Text>
@@ -54,7 +56,9 @@ export function Money({
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
   return (
-    <Text style={[styles.sectionLabel, { color: colors.inkFaint }]}>{children}</Text>
+    <Text style={[styles.sectionLabel, { color: colors.inkFaint }]}>
+      {children}
+    </Text>
   );
 }
 
@@ -63,7 +67,63 @@ export function LocalBadge({ label }: { label: string }) {
   return (
     <View style={[styles.badge, { backgroundColor: colors.mossTint }]}>
       <View style={[styles.dot, { backgroundColor: colors.moss }]} />
-      <Text style={[styles.badgeText, { color: colors.mossDeep }]}>{label}</Text>
+      <Text style={[styles.badgeText, { color: colors.mossDeep }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+export function EmptyState({
+  icon,
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  icon: string;
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.emptyState}>
+      <Text style={{ fontSize: 34, marginBottom: spacing.sm }}>{icon}</Text>
+      <Text
+        style={{
+          color: colors.ink,
+          fontFamily: fonts.display,
+          fontSize: 17,
+          marginBottom: 6,
+          textAlign: 'center',
+        }}
+      >
+        {title}
+      </Text>
+      <Text
+        style={{
+          color: colors.inkFaint,
+          fontSize: 12.5,
+          textAlign: 'center',
+          lineHeight: 18,
+          maxWidth: 260,
+        }}
+      >
+        {body}
+      </Text>
+      {actionLabel && onAction && (
+        <Text
+          onPress={onAction}
+          style={[
+            styles.emptyAction,
+            { backgroundColor: colors.moss, color: colors.paperRaised },
+          ]}
+        >
+          {actionLabel}
+        </Text>
+      )}
     </View>
   );
 }
@@ -91,7 +151,8 @@ export function CategoryChip({
           color: selected ? colors.paperRaised : colors.inkSoft,
           fontWeight: selected ? '700' : '400',
         },
-      ]}>
+      ]}
+    >
       {icon ? `${icon} ` : ''}
       {label}
     </Text>
@@ -127,6 +188,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     fontSize: 12,
+    overflow: 'hidden',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl * 1.5,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyAction: {
+    marginTop: spacing.lg,
+    borderRadius: radius.pill,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    fontSize: 12.5,
+    fontWeight: '700',
     overflow: 'hidden',
   },
 });
