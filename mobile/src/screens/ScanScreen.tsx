@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -7,7 +13,12 @@ import {
   useCameraPermission,
   usePhotoOutput,
 } from 'react-native-vision-camera';
-import { Card, LocalBadge, Money, SectionLabel } from '../components/Primitives';
+import {
+  Card,
+  LocalBadge,
+  Money,
+  SectionLabel,
+} from '../components/Primitives';
 import { CATEGORIES } from '../constants';
 import { sampleReceipts } from '../data/sampleData';
 import { useReceiptsStore } from '../storage/useReceiptsStore';
@@ -49,6 +60,11 @@ export default function ScanScreen() {
     }
   }
 
+  function onRetake() {
+    setCapturedPath(null);
+    setCategory(null);
+  }
+
   async function onSave() {
     if (!category) return; // button is disabled in this state, belt-and-braces
     setSaving(true);
@@ -71,16 +87,31 @@ export default function ScanScreen() {
   const subtotal = STUB_EXTRACTION.total - STUB_EXTRACTION.tax;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.paperRaised }} edges={['top']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.paperRaised }}
+      edges={['top']}
+    >
       <View style={styles.statusStrip}>
-        <LocalBadge label={capturedPath ? 'Extracting on-device…' : 'Camera ready'} />
+        <LocalBadge
+          label={capturedPath ? 'Extracting on-device…' : 'Camera ready'}
+        />
       </View>
       <ScrollView contentContainerStyle={styles.body}>
-        <Text style={[styles.title, { color: colors.ink, fontFamily: fonts.display }]}>
+        <Text
+          style={[
+            styles.title,
+            { color: colors.ink, fontFamily: fonts.display },
+          ]}
+        >
           Scan receipt
         </Text>
 
-        <View style={[styles.captureFrame, { borderColor: colors.line, backgroundColor: colors.paperSunken }]}>
+        <View
+          style={[
+            styles.captureFrame,
+            { borderColor: colors.line, backgroundColor: colors.paperSunken },
+          ]}
+        >
           {hasPermission && device ? (
             <Camera
               device={device}
@@ -90,8 +121,16 @@ export default function ScanScreen() {
             />
           ) : (
             <View style={styles.permissionFallback}>
-              <Text style={{ color: colors.inkSoft, fontSize: 12, textAlign: 'center' }}>
-                {hasPermission ? 'No camera found' : 'Camera permission needed to scan receipts'}
+              <Text
+                style={{
+                  color: colors.inkSoft,
+                  fontSize: 12,
+                  textAlign: 'center',
+                }}
+              >
+                {hasPermission
+                  ? 'No camera found'
+                  : 'Camera permission needed to scan receipts'}
               </Text>
             </View>
           )}
@@ -101,8 +140,15 @@ export default function ScanScreen() {
           <TouchableOpacity
             onPress={onCapture}
             disabled={!hasPermission || !device || capturing}
-            style={[styles.captureBtn, { backgroundColor: colors.moss }]}>
-            <Text style={{ color: colors.paperRaised, fontWeight: '700', fontSize: 14 }}>
+            style={[styles.captureBtn, { backgroundColor: colors.moss }]}
+          >
+            <Text
+              style={{
+                color: colors.paperRaised,
+                fontWeight: '700',
+                fontSize: 14,
+              }}
+            >
               {capturing ? 'Capturing…' : 'Capture receipt'}
             </Text>
           </TouchableOpacity>
@@ -110,10 +156,30 @@ export default function ScanScreen() {
 
         {capturedPath && (
           <Card>
-            <Text style={[styles.vendor, { color: colors.ink, fontFamily: fonts.display }]}>
+            <View style={styles.retakeRow}>
+              <TouchableOpacity onPress={onRetake}>
+                <Text
+                  style={{
+                    color: colors.moss,
+                    fontSize: 12.5,
+                    fontWeight: '600',
+                  }}
+                >
+                  ‹ Retake photo
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text
+              style={[
+                styles.vendor,
+                { color: colors.ink, fontFamily: fonts.display },
+              ]}
+            >
               {STUB_EXTRACTION.vendor}
             </Text>
-            <Text style={{ color: colors.inkFaint, fontSize: 11, marginBottom: 12 }}>
+            <Text
+              style={{ color: colors.inkFaint, fontSize: 11, marginBottom: 12 }}
+            >
               {new Date().toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -125,22 +191,37 @@ export default function ScanScreen() {
             {visibleItems.map((li, i) => (
               <View
                 key={i}
-                style={[styles.liRow, { borderBottomColor: colors.lineStrong }]}>
-                <Text style={{ color: colors.inkSoft, fontSize: 12, flex: 1 }} numberOfLines={1}>
+                style={[styles.liRow, { borderBottomColor: colors.lineStrong }]}
+              >
+                <Text
+                  style={{ color: colors.inkSoft, fontSize: 12, flex: 1 }}
+                  numberOfLines={1}
+                >
                   {li.description}
                 </Text>
                 <Money value={li.total} size={12} />
               </View>
             ))}
             {hiddenCount > 0 && (
-              <Text style={{ color: colors.inkFaint, fontSize: 11, fontStyle: 'italic', paddingVertical: 6 }}>
+              <Text
+                style={{
+                  color: colors.inkFaint,
+                  fontSize: 11,
+                  fontStyle: 'italic',
+                  paddingVertical: 6,
+                }}
+              >
                 + {hiddenCount} more items
               </Text>
             )}
 
-            <View style={[styles.totals, { borderTopColor: colors.lineStrong }]}>
+            <View
+              style={[styles.totals, { borderTopColor: colors.lineStrong }]}
+            >
               <View style={styles.totalsRow}>
-                <Text style={{ color: colors.inkSoft, fontSize: 12 }}>Subtotal</Text>
+                <Text style={{ color: colors.inkSoft, fontSize: 12 }}>
+                  Subtotal
+                </Text>
                 <Money value={subtotal} size={12} />
               </View>
               <View style={styles.totalsRow}>
@@ -162,31 +243,59 @@ export default function ScanScreen() {
                       style={[
                         styles.chip,
                         {
-                          backgroundColor: category === c ? colors.moss : colors.paperRaised,
-                          borderColor: category === c ? colors.moss : colors.lineStrong,
-                          color: category === c ? colors.paperRaised : colors.inkSoft,
+                          backgroundColor:
+                            category === c ? colors.moss : colors.paperRaised,
+                          borderColor:
+                            category === c ? colors.moss : colors.lineStrong,
+                          color:
+                            category === c
+                              ? colors.paperRaised
+                              : colors.inkSoft,
                           fontWeight: category === c ? '700' : '400',
                         },
-                      ]}>
+                      ]}
+                    >
                       {c}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={{ color: colors.inkFaint, fontSize: 10.5, fontStyle: 'italic', marginTop: 8 }}>
-                The model reads the receipt. It never guesses a category — that's always your tap.
+              <Text
+                style={{
+                  color: colors.inkFaint,
+                  fontSize: 10.5,
+                  fontStyle: 'italic',
+                  marginTop: 8,
+                }}
+              >
+                The model reads the receipt. It never guesses a category —
+                that's always your tap.
               </Text>
             </View>
 
             <TouchableOpacity
               style={[
                 styles.saveBtn,
-                { backgroundColor: colors.moss, opacity: category && !saving ? 1 : 0.5 },
+                {
+                  backgroundColor: colors.moss,
+                  opacity: category && !saving ? 1 : 0.5,
+                },
               ]}
               disabled={!category || saving}
-              onPress={onSave}>
-              <Text style={{ color: colors.paperRaised, fontWeight: '700', fontSize: 13.5 }}>
-                {saving ? 'Saving…' : category ? 'Save to ledger' : 'Pick a category to save'}
+              onPress={onSave}
+            >
+              <Text
+                style={{
+                  color: colors.paperRaised,
+                  fontWeight: '700',
+                  fontSize: 13.5,
+                }}
+              >
+                {saving
+                  ? 'Saving…'
+                  : category
+                  ? 'Save to ledger'
+                  : 'Pick a category to save'}
               </Text>
             </TouchableOpacity>
           </Card>
@@ -207,14 +316,43 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: spacing.md,
   },
-  permissionFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  captureBtn: { borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginBottom: spacing.md },
+  permissionFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  captureBtn: {
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  retakeRow: { marginBottom: 10 },
   vendor: { fontSize: 17, marginBottom: 2 },
-  liRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, gap: 8 },
+  liRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
   totals: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, gap: 4 },
   totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   categoryPicker: { marginTop: 14 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  chip: { fontSize: 11.5, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, overflow: 'hidden' },
-  saveBtn: { marginTop: 14, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  chip: {
+    fontSize: 11.5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    overflow: 'hidden',
+  },
+  saveBtn: {
+    marginTop: 14,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
 });
