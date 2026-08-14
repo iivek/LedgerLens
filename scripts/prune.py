@@ -128,6 +128,25 @@ def main() -> None:
         model.config.text_config.num_hidden_layers = len(kept)
     if hasattr(model.config, "num_hidden_layers"):
         model.config.num_hidden_layers = len(kept)
+    # layer_types is a second, PARALLEL per-layer list (attention type --
+    # "full_attention" vs "sliding_attention" -- per original layer index,
+    # read by Qwen2VLAttention.__init__ as config.layer_types[layer_idx]) that
+    # num_hidden_layers alone doesn't cover. Left untrimmed, reload fails
+    # outright rather than silently: "num_hidden_layers (26) must be equal
+    # to the number of layer types (28)" -- caught by an actual reload
+    # attempt, not assumed. Checked text_config first since that's where the
+    # attention module actually reads it from; elif (not a second `if`) so a
+    # single list shared by reference between the two config objects never
+    # gets filtered against `drop_idx` twice.
+    _cfg_with_layer_types = None
+    if getattr(getattr(model.config, "text_config", None), "layer_types", None) is not None:
+        _cfg_with_layer_types = model.config.text_config
+    elif getattr(model.config, "layer_types", None) is not None:
+        _cfg_with_layer_types = model.config
+    if _cfg_with_layer_types is not None:
+        _cfg_with_layer_types.layer_types = [
+            lt for i, lt in enumerate(_cfg_with_layer_types.layer_types) if i not in drop_idx
+        ]
 
     model.save_pretrained(args.out)
     # Save the processor instance already in use (min/max_pixels set above),
