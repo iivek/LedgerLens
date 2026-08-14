@@ -10,6 +10,7 @@ import { useTheme } from '../theme/useTheme';
 // would compromise the app's core "zero network permission" claim for a
 // feature that gates nothing. Opening the user's own browser is an
 // explicit, user-initiated action that never touches this app's process.
+// TODO: replace PLACEHOLDER with a real sponsor/tip link before any release.
 const SUPPORT_URL = 'https://github.com/sponsors/PLACEHOLDER';
 
 const POINTS = [
