@@ -2,6 +2,11 @@
 #
 .DS_Store
 
+# llama.rn's install script copies these Hexagon-NPU native libs into
+# android/app/src/main/assets/ on every `npm install` (llama-rn-download-artifacts) --
+# regenerable build output living in a source directory, not our own code.
+android/app/src/main/assets/ggml-hexagon/
+
 # Xcode
 #
 build/
