@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Debug-build-only. React Native's Metro dev server (JS bundle reload,
+      the in-app dev menu, Flipper/dev-tools sockets) needs local network
+      access during development, but the release build must NOT have this
+      permission, since "zero network permission, ever" is the app's core
+      privacy claim (see the design doc / README). Gradle merges this
+      manifest into debug builds only; release builds use the main manifest,
+      which declares no INTERNET permission at all.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
