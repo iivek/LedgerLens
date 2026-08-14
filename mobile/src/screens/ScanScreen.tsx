@@ -140,7 +140,13 @@ export default function ScanScreen() {
           <TouchableOpacity
             onPress={onCapture}
             disabled={!hasPermission || !device || capturing}
-            style={[styles.captureBtn, { backgroundColor: colors.moss }]}
+            style={[
+              styles.captureBtn,
+              {
+                backgroundColor: colors.moss,
+                opacity: hasPermission && device && !capturing ? 1 : 0.5,
+              },
+            ]}
           >
             <Text
               style={{
