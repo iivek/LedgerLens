@@ -42,4 +42,14 @@ export async function initSchema(): Promise<void> {
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_line_items_receipt_id ON line_items(receipt_id);
   `);
+  // Single-row flag table, separate from the receipts table itself -- seeding
+  // needs to know "has this install ever been seeded", which is not the same
+  // question as "is the receipts table currently empty" (a user who deletes
+  // their last real receipt should see the empty state, not sample data).
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
 }

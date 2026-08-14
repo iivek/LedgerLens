@@ -4,7 +4,9 @@ import { getDB } from './db';
 
 export async function listReceipts(): Promise<Receipt[]> {
   const db = getDB();
-  const receiptRows = (await db.execute('SELECT * FROM receipts ORDER BY date DESC;')).rows;
+  const receiptRows = (
+    await db.execute('SELECT * FROM receipts ORDER BY date DESC;')
+  ).rows;
   const itemRows = (await db.execute('SELECT * FROM line_items;')).rows;
 
   const itemsByReceipt = new Map<string, LineItem[]>();
@@ -41,7 +43,15 @@ export async function addReceipt(receipt: Receipt): Promise<void> {
   await db.transaction(async tx => {
     await tx.execute(
       'INSERT INTO receipts (id, vendor, date, currency, total, tax, category) VALUES (?, ?, ?, ?, ?, ?, ?);',
-      [receipt.id, receipt.vendor, receipt.date, receipt.currency, receipt.total, receipt.tax, receipt.category],
+      [
+        receipt.id,
+        receipt.vendor,
+        receipt.date,
+        receipt.currency,
+        receipt.total,
+        receipt.tax,
+        receipt.category,
+      ],
     );
     for (const li of receipt.lineItems) {
       await tx.execute(
@@ -57,16 +67,32 @@ export async function deleteReceipt(id: string): Promise<void> {
   await db.execute('DELETE FROM receipts WHERE id = ?;', [id]);
 }
 
-/** First-launch only: an empty ledger reads as "is this broken" rather than
- * "you haven't scanned anything yet" -- seed it once so the app never opens
- * to a blank state, without ever overwriting real user data on later
- * launches (only runs when the table is genuinely empty). */
+/** First-launch only: gated on a persisted flag, not on "the receipts table
+ * is currently empty" -- a user who deletes their last real receipt should
+ * land on the empty state, not get sample data silently reinserted on their
+ * next cold start. */
 export async function seedIfEmpty(): Promise<void> {
   const db = getDB();
-  const { rows } = await db.execute('SELECT COUNT(*) as n FROM receipts;');
-  const count = (rows[0]?.n as number) ?? 0;
-  if (count > 0) return;
-  for (const receipt of sampleReceipts) {
-    await addReceipt(receipt);
+  const { rows } = await db.execute(
+    'SELECT value FROM app_meta WHERE key = ?;',
+    ['seeded'],
+  );
+  if (rows.length > 0) return;
+  // Installs that seeded under the old (pre-app_meta) scheme already have
+  // these sample rows -- re-inserting them would collide on id. Only seed if
+  // the ledger is actually empty; either way, mark seeded so this never runs
+  // again, including after the user later deletes everything.
+  const { rows: countRows } = await db.execute(
+    'SELECT COUNT(*) as n FROM receipts;',
+  );
+  const alreadyHasReceipts = ((countRows[0]?.n as number) ?? 0) > 0;
+  if (!alreadyHasReceipts) {
+    for (const receipt of sampleReceipts) {
+      await addReceipt(receipt);
+    }
   }
+  await db.execute('INSERT INTO app_meta (key, value) VALUES (?, ?);', [
+    'seeded',
+    '1',
+  ]);
 }
