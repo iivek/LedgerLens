@@ -1,7 +1,8 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Card, LocalBadge, Money, SectionLabel } from '../components/Primitives';
 import { DonutChart } from '../components/DonutChart';
 import { CATEGORY_ICON, monthlyBudget } from '../constants';
@@ -9,11 +10,13 @@ import { categoryBreakdown, totalSpent } from '../utils/receiptMath';
 import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 
 const LEGEND_COLORS = ['moss', 'ochre', 'mossDeep', 'oxblood', 'lineStrong'] as const;
 
 export default function DashboardScreen() {
   const { colors } = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { receipts, refresh } = useReceiptsStore();
   // Refetch whenever this tab regains focus -- a receipt saved on the Scan
   // tab wouldn't otherwise appear here until some other state change
@@ -89,7 +92,10 @@ export default function DashboardScreen() {
 
         <SectionLabel>Recent</SectionLabel>
         {recent.map(r => (
-          <View key={r.id} style={[styles.txn, { borderBottomColor: colors.line }]}>
+          <TouchableOpacity
+            key={r.id}
+            onPress={() => navigation.navigate('ReceiptDetail', { id: r.id })}
+            style={[styles.txn, { borderBottomColor: colors.line }]}>
             <View style={[styles.txnIcon, { backgroundColor: colors.paperSunken }]}>
               <Text style={{ fontSize: 14 }}>{CATEGORY_ICON[r.category]}</Text>
             </View>
@@ -103,7 +109,7 @@ export default function DashboardScreen() {
               </Text>
             </View>
             <Money value={r.total} size={13} />
-          </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </SafeAreaView>

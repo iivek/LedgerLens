@@ -7,6 +7,7 @@ import OverviewScreen from '../screens/OverviewScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PrivacyScreen from '../screens/PrivacyScreen';
 import SupportScreen from '../screens/SupportScreen';
+import ReceiptDetailScreen from '../screens/ReceiptDetailScreen';
 import { useTheme } from '../theme/useTheme';
 
 export type SettingsStackParamList = {
@@ -22,8 +23,17 @@ export type TabParamList = {
   SettingsStack: undefined;
 };
 
+// Root-level stack sitting above the tab bar so a receipt can be pushed full-
+// screen (tabs hidden) from either Dashboard's "Recent" list or Overview's
+// vendor list, without giving each tab its own duplicate detail stack.
+export type RootStackParamList = {
+  Tabs: undefined;
+  ReceiptDetail: { id: string };
+};
+
 const Tab = createBottomTabNavigator<TabParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
+const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 function SettingsStackNavigator() {
   return (
@@ -42,7 +52,7 @@ const TAB_ICON: Record<keyof TabParamList, string> = {
   SettingsStack: '⚙️',
 };
 
-export default function RootNavigator() {
+function MainTabs() {
   const { colors } = useTheme();
   return (
     <Tab.Navigator
@@ -65,5 +75,20 @@ export default function RootNavigator() {
       <Tab.Screen name="Overview" component={OverviewScreen} />
       <Tab.Screen name="SettingsStack" component={SettingsStackNavigator} options={{ title: 'Settings' }} />
     </Tab.Navigator>
+  );
+}
+
+// Root stack sits above the tab bar so ReceiptDetail renders full-screen
+// (tabs hidden) when pushed from either Dashboard or Overview.
+export default function RootNavigator() {
+  return (
+    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Screen name="Tabs" component={MainTabs} />
+      <RootStack.Screen
+        name="ReceiptDetail"
+        component={ReceiptDetailScreen}
+        options={{ presentation: 'card' }}
+      />
+    </RootStack.Navigator>
   );
 }
