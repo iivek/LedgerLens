@@ -1,0 +1,35 @@
+appId: com.ledgerlensapp
+name: Receipt detail, delete, and the empty state it leads to
+---
+# Covers three things at once, in the order a real user would hit them:
+# 1. tapping a receipt opens its full detail (line items + delete)
+# 2. deleting every receipt actually empties the ledger (not just the UI)
+# 3. an empty ledger shows the empty state, not stale/phantom sample data --
+#    a real bug this session: seeding was gated on "table is currently
+#    empty" instead of "this install has been seeded before", so deleting
+#    everything silently brought sample data back on the next cold start.
+- launchApp:
+    clearState: true
+- tapOn: "Blue Bottle Coffee"
+- assertVisible: "LINE ITEMS"
+- assertVisible: "Delete receipt"
+- tapOn: "Delete receipt"
+- assertVisible: "Delete receipt?"
+- tapOn: "DELETE"
+- assertNotVisible: "Blue Bottle Coffee"
+
+# Five sample receipts ship seeded on first launch (Trader Joe's, Ace
+# Hardware, CVS Pharmacy, Shell, Blue Bottle Coffee) -- one is gone above,
+# delete the remaining four the same way, always taking the top Recent row.
+- repeat:
+    times: 4
+    commands:
+      - tapOn:
+          id: "recent-row-0"
+      - tapOn: "Delete receipt"
+      - tapOn: "DELETE"
+
+- assertVisible: "No receipts yet"
+- assertVisible: "Scan a receipt"
+- tapOn: "Scan a receipt"
+- assertVisible: "Scan receipt"

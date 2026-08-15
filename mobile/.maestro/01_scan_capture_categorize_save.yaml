@@ -1,0 +1,24 @@
+appId: com.ledgerlensapp
+name: Scan -> capture -> categorize -> save
+---
+# Golden path: the extraction is stubbed (llama.rn not wired up yet), but the
+# camera capture, category picker, and save-to-ledger flow are all real.
+- launchApp:
+    clearState: true
+- tapOn: ".*Scan"
+- assertVisible: "Camera ready"
+- tapOn: "Capture receipt"
+# A capture that fails leaves you back on the live camera view with no
+# "Retake photo" link -- asserting this is present is the real proof the
+# native capture call actually succeeded, not just that a tap registered.
+- assertVisible: "Retake photo"
+# The model never guesses a category -- the save button must stay disabled
+# (and say so) until the user taps one themselves.
+- assertVisible: "Pick a category to save"
+- tapOn: "Groceries"
+- assertVisible: "Save to ledger"
+- tapOn: "Save to ledger"
+# Saving returns Scan to its pre-capture state, ready for the next receipt.
+- assertVisible: "Camera ready"
+- tapOn: ".*Dashboard"
+- assertVisible: "Trader Joe's"

@@ -1,0 +1,20 @@
+appId: com.ledgerlensapp
+name: Retake photo returns to a live, working camera
+---
+# Regression test for a real bug found on physical hardware: after capture,
+# the screen was showing the live camera's last frozen frame (a hardware
+# surface) rather than the actual saved photo, and Retake needed to prove it
+# genuinely resets back to a capturable state, not just a visual one.
+- launchApp:
+    clearState: true
+- tapOn: ".*Scan"
+- assertVisible: "Camera ready"
+- tapOn: "Capture receipt"
+- assertVisible: "Retake photo"
+- tapOn: "Retake photo"
+- assertVisible: "Camera ready"
+- assertVisible: "Capture receipt"
+- assertNotVisible: "Retake photo"
+# Prove the camera is actually capturable again, not just visually reset.
+- tapOn: "Capture receipt"
+- assertVisible: "Retake photo"

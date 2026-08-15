@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -42,6 +43,7 @@ export default function ScanScreen() {
   const [category, setCategory] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -55,6 +57,14 @@ export default function ScanScreen() {
       photo.dispose();
       setCapturedPath(path);
       setCategory(null); // never pre-select -- the model doesn't guess a category
+      setCaptureError(null);
+    } catch (err) {
+      // Real device hardware can throw on the very first capture right after
+      // permission is granted (camera session still warming up) -- surface a
+      // plain retry prompt instead of letting this bubble into a raw native
+      // error banner with no indication that trying again just works.
+      console.warn('[LedgerLens] capture failed:', err);
+      setCaptureError('Could not capture — try again.');
     } finally {
       setCapturing(false);
     }
@@ -112,10 +122,20 @@ export default function ScanScreen() {
             { borderColor: colors.line, backgroundColor: colors.paperSunken },
           ]}
         >
-          {hasPermission && device ? (
+          {capturedPath ? (
+            // The real saved photo, not the live preview frozen on its last
+            // frame -- that frame is a hardware-composited surface that
+            // doesn't participate in ScrollView transforms correctly (it
+            // visibly narrows/distorts while scrolling on real devices).
+            <Image
+              source={{ uri: `file://${capturedPath}` }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+          ) : hasPermission && device ? (
             <Camera
               device={device}
-              isActive={!capturedPath}
+              isActive
               outputs={[photoOutput]}
               style={StyleSheet.absoluteFill}
             />
@@ -158,6 +178,19 @@ export default function ScanScreen() {
               {capturing ? 'Capturing…' : 'Capture receipt'}
             </Text>
           </TouchableOpacity>
+        )}
+        {captureError && !capturedPath && (
+          <Text
+            style={{
+              color: colors.oxblood,
+              fontSize: 12,
+              textAlign: 'center',
+              marginTop: -spacing.sm,
+              marginBottom: spacing.md,
+            }}
+          >
+            {captureError}
+          </Text>
         )}
 
         {capturedPath && (

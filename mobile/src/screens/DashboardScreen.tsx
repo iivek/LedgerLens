@@ -153,9 +153,10 @@ export default function DashboardScreen() {
             </View>
 
             <SectionLabel>Recent</SectionLabel>
-            {recent.map(r => (
+            {recent.map((r, i) => (
               <TouchableOpacity
                 key={r.id}
+                testID={`recent-row-${i}`}
                 onPress={() =>
                   navigation.navigate('ReceiptDetail', { id: r.id })
                 }
