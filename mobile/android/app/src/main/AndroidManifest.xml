@@ -18,16 +18,19 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
-        Lets llama.rn load the on-device GPU acceleration path where it
-        exists (Adreno 700+ / Snapdragon 8 Gen 1+, per its README).
-        required="false" so install/launch stays fine on chips without it
-        (confirmed necessary: this project's own test device is a
-        Snapdragon 778G+/Adreno 642L, a generation below that tier, and
-        falls back to CPU-only exactly as intended with this flag set).
+        Deliberately NOT declaring libOpenCL.so as a uses-native-library.
+        Tried it (2026-08-16): llama.rn's OpenCL backend registration calls
+        ggml_abort(), a hard SIGABRT crash, not a graceful fallback, when it
+        can't find a properly-supported OpenCL device. Confirmed on this
+        project's own test device (Snapdragon 778G+ / Adreno 642L, below the
+        Adreno 700+ tier llama.rn's README lists as supported). Without this
+        declaration, libOpenCL.so fails to *load* at all and llama.rn falls
+        back to its next-best CPU-only variant cleanly. With it declared,
+        the library loads but then crashes the whole app on unsupported
+        hardware. Only re-add this once paired with real testing on
+        confirmed Adreno 700+ / Snapdragon 8 Gen 1+ hardware. Don't
+        re-enable blind, it's strictly worse on anything below that tier.
       -->
-      <uses-native-library
-        android:name="libOpenCL.so"
-        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
