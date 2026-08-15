@@ -18,19 +18,33 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
-        Deliberately NOT declaring libOpenCL.so as a uses-native-library.
-        Tried it (2026-08-16): llama.rn's OpenCL backend registration calls
-        ggml_abort(), a hard SIGABRT crash, not a graceful fallback, when it
-        can't find a properly-supported OpenCL device. Confirmed on this
-        project's own test device (Snapdragon 778G+ / Adreno 642L, below the
-        Adreno 700+ tier llama.rn's README lists as supported). Without this
-        declaration, libOpenCL.so fails to *load* at all and llama.rn falls
-        back to its next-best CPU-only variant cleanly. With it declared,
-        the library loads but then crashes the whole app on unsupported
-        hardware. Only re-add this once paired with real testing on
-        confirmed Adreno 700+ / Snapdragon 8 Gen 1+ hardware. Don't
-        re-enable blind, it's strictly worse on anything below that tier.
+        Lets llama.rn load libOpenCL.so for GPU-accelerated inference.
+
+        RE-ENABLED 2026-08-16 specifically to test on a Nothing Phone (3)
+        (Snapdragon 8s Gen 4 / SM8735, Adreno 825), two generations past
+        the floor llama.cpp's own OPENCL.md lists as verified (Adreno 750,
+        Snapdragon 8 Gen 3; A6x-series GPUs are explicitly called out there
+        as "likely not supported due to outdated driver and compiler").
+
+        HISTORY: first tried on 2026-08-16 with a Snapdragon 778G+ / Adreno
+        642L device (this project's other test phone, an A6x-class GPU).
+        libOpenCL.so loaded, but llama.rn's OpenCL backend registration then
+        called ggml_abort(), a hard SIGABRT crash, not a graceful fallback,
+        because that GPU isn't in its supported tier. Reverted at the time;
+        without this declaration, libOpenCL.so fails to load at all and
+        llama.rn falls back to its next-best CPU-only variant cleanly.
+
+        REMAINING RISK: this is a single shared manifest, so installing
+        this same build on unsupported hardware (e.g. that 778G+ device
+        again) will reproduce the crash. Not yet safe to ship broadly as
+        is; would need either runtime chip-capability detection before
+        attempting the OpenCL variant, or confirmation from a newer
+        llama.rn that this registration path fails gracefully instead of
+        aborting.
       -->
+      <uses-native-library
+        android:name="libOpenCL.so"
+        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
