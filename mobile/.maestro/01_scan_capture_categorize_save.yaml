@@ -11,9 +11,13 @@ name: Scan -> capture -> categorize -> save
 # A capture that fails leaves you back on the live camera view with no
 # "Retake photo" link -- asserting this is present is the real proof the
 # native capture call actually succeeded, not just that a tap registered.
-- assertVisible: "Retake photo"
+- assertVisible: ".*Retake photo"
 # The model never guesses a category -- the save button must stay disabled
-# (and say so) until the user taps one themselves.
+# (and say so) until the user taps one themselves. Both are below the fold
+# on most screens, under the full line-item breakdown.
+- scrollUntilVisible:
+    element: "Groceries"
+    direction: DOWN
 - assertVisible: "Pick a category to save"
 - tapOn: "Groceries"
 - assertVisible: "Save to ledger"
