@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -21,16 +22,11 @@ import {
   SectionLabel,
 } from '../components/Primitives';
 import { CATEGORIES } from '../constants';
-import { sampleReceipts } from '../data/sampleData';
+import { cancelExtraction, extractReceipt } from '../model/extract';
+import { toReceiptFields, type RawExtraction } from '../model/schema';
 import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, radius, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
-
-// The Trader Joe's sample receipt stands in for a real extraction result
-// until llama.rn is wired up (next step) -- capturing a real photo already
-// works below and the save-to-ledger path below is real, it's just the
-// vendor/line-items/total shown here that are canned, not read from the photo.
-const STUB_EXTRACTION = sampleReceipts[1];
 
 export default function ScanScreen() {
   const { colors } = useTheme();
@@ -44,6 +40,14 @@ export default function ScanScreen() {
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extraction, setExtraction] = useState<RawExtraction | null>(null);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  // A CPU-only extraction can take many minutes (see CLAUDE.md's on-device
+  // latency caveat), long enough that a user can retake and start a second
+  // one before the first's promise settles -- this stops the stale run's
+  // eventual result/error from clobbering whatever's current by then.
+  const extractionIdRef = useRef(0);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -51,9 +55,10 @@ export default function ScanScreen() {
 
   async function onCapture() {
     setCapturing(true);
+    let path: string;
     try {
       const photo = await photoOutput.capturePhoto({}, {});
-      const path = await photo.saveToTemporaryFileAsync();
+      path = await photo.saveToTemporaryFileAsync();
       photo.dispose();
       setCapturedPath(path);
       setCategory(null); // never pre-select -- the model doesn't guess a category
@@ -65,36 +70,78 @@ export default function ScanScreen() {
       // error banner with no indication that trying again just works.
       console.warn('[LedgerLens] capture failed:', err);
       setCaptureError('Could not capture — try again.');
+      return;
     } finally {
       setCapturing(false);
+    }
+    runExtraction(path);
+  }
+
+  async function runExtraction(path: string) {
+    const requestId = ++extractionIdRef.current;
+    setExtracting(true);
+    setExtraction(null);
+    setExtractionError(null);
+    try {
+      const raw = await extractReceipt(path);
+      if (requestId !== extractionIdRef.current) return; // superseded by a retake
+      if (raw) {
+        setExtraction(raw);
+      } else {
+        setExtractionError(
+          'Could not read this receipt — try again or retake.',
+        );
+      }
+    } catch (err) {
+      if (requestId !== extractionIdRef.current) return;
+      console.warn('[LedgerLens] extraction failed:', err);
+      setExtractionError('Could not read this receipt — try again or retake.');
+    } finally {
+      if (requestId === extractionIdRef.current) setExtracting(false);
     }
   }
 
   function onRetake() {
+    if (extracting) {
+      // Invalidate the in-flight request first so its eventual settle is a
+      // no-op, then actually stop the native inference -- don't let a wall-
+      // clock-minutes-long CPU run keep burning battery unseen just because
+      // the UI moved on (see CLAUDE.md's on-device latency caveat).
+      extractionIdRef.current++;
+      cancelExtraction().catch(err =>
+        console.warn('[LedgerLens] cancelExtraction failed:', err),
+      );
+    }
     setCapturedPath(null);
     setCategory(null);
+    setExtracting(false);
+    setExtraction(null);
+    setExtractionError(null);
   }
 
   async function onSave() {
-    if (!category) return; // button is disabled in this state, belt-and-braces
+    if (!category || !extraction) return; // button is disabled in this state, belt-and-braces
     setSaving(true);
     try {
       await save({
-        ...STUB_EXTRACTION,
+        ...toReceiptFields(extraction),
         id: `receipt-${Date.now()}`,
-        date: new Date().toISOString().slice(0, 10),
         category,
       });
       setCapturedPath(null);
       setCategory(null);
+      setExtraction(null);
     } finally {
       setSaving(false);
     }
   }
 
-  const visibleItems = STUB_EXTRACTION.lineItems.slice(0, 4);
-  const hiddenCount = STUB_EXTRACTION.lineItems.length - visibleItems.length;
-  const subtotal = STUB_EXTRACTION.total - STUB_EXTRACTION.tax;
+  const fields = extraction ? toReceiptFields(extraction) : null;
+  const visibleItems = fields ? fields.lineItems.slice(0, 4) : [];
+  const hiddenCount = fields
+    ? fields.lineItems.length - visibleItems.length
+    : 0;
+  const subtotal = fields ? fields.total - fields.tax : 0;
 
   return (
     <SafeAreaView
@@ -103,7 +150,13 @@ export default function ScanScreen() {
     >
       <View style={styles.statusStrip}>
         <LocalBadge
-          label={capturedPath ? 'Extracting on-device…' : 'Camera ready'}
+          label={
+            extracting
+              ? 'Extracting on-device…'
+              : capturedPath
+              ? 'Ready'
+              : 'Camera ready'
+          }
         />
       </View>
       <ScrollView contentContainerStyle={styles.body}>
@@ -208,135 +261,191 @@ export default function ScanScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            <Text
-              style={[
-                styles.vendor,
-                { color: colors.ink, fontFamily: fonts.display },
-              ]}
-            >
-              {STUB_EXTRACTION.vendor}
-            </Text>
-            <Text
-              style={{ color: colors.inkFaint, fontSize: 11, marginBottom: 12 }}
-            >
-              {new Date().toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}{' '}
-              · {STUB_EXTRACTION.currency}
-            </Text>
 
-            {visibleItems.map((li, i) => (
-              <View
-                key={i}
-                style={[styles.liRow, { borderBottomColor: colors.lineStrong }]}
-              >
+            {extracting && (
+              <View>
+                <View style={styles.extractingRow}>
+                  <ActivityIndicator color={colors.moss} />
+                  <Text style={{ color: colors.inkSoft, fontSize: 12.5 }}>
+                    Reading receipt on-device…
+                  </Text>
+                </View>
                 <Text
-                  style={{ color: colors.inkSoft, fontSize: 12, flex: 1 }}
-                  numberOfLines={1}
+                  style={{
+                    color: colors.inkFaint,
+                    fontSize: 11,
+                    fontStyle: 'italic',
+                    marginTop: -4,
+                    marginBottom: 8,
+                  }}
                 >
-                  {li.description}
+                  This runs entirely on your phone's CPU — on some devices that
+                  can take several minutes, not seconds. Feel free to switch
+                  tabs; it keeps running in the background.
                 </Text>
-                <Money value={li.total} size={12} />
               </View>
-            ))}
-            {hiddenCount > 0 && (
+            )}
+
+            {!extracting && extractionError && (
               <Text
                 style={{
-                  color: colors.inkFaint,
-                  fontSize: 11,
-                  fontStyle: 'italic',
-                  paddingVertical: 6,
+                  color: colors.oxblood,
+                  fontSize: 12.5,
+                  paddingVertical: 8,
                 }}
               >
-                + {hiddenCount} more items
+                {extractionError}
               </Text>
             )}
 
-            <View
-              style={[styles.totals, { borderTopColor: colors.lineStrong }]}
-            >
-              <View style={styles.totalsRow}>
-                <Text style={{ color: colors.inkSoft, fontSize: 12 }}>
-                  Subtotal
+            {!extracting && fields && (
+              <>
+                <Text
+                  style={[
+                    styles.vendor,
+                    { color: colors.ink, fontFamily: fonts.display },
+                  ]}
+                >
+                  {fields.vendor}
                 </Text>
-                <Money value={subtotal} size={12} />
-              </View>
-              <View style={styles.totalsRow}>
-                <Text style={{ color: colors.inkSoft, fontSize: 12 }}>Tax</Text>
-                <Money value={STUB_EXTRACTION.tax} size={12} />
-              </View>
-              <View style={styles.totalsRow}>
-                <Text style={{ color: colors.ink, fontSize: 15 }}>Total</Text>
-                <Money value={STUB_EXTRACTION.total} size={15} emphasis />
-              </View>
-            </View>
+                <Text
+                  style={{
+                    color: colors.inkFaint,
+                    fontSize: 11,
+                    marginBottom: 12,
+                  }}
+                >
+                  {new Date(fields.date).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}{' '}
+                  · {fields.currency}
+                </Text>
 
-            <View style={styles.categoryPicker}>
-              <SectionLabel>Category — your choice</SectionLabel>
-              <View style={styles.chipRow}>
-                {CATEGORIES.map(c => (
-                  <TouchableOpacity key={c} onPress={() => setCategory(c)}>
+                {visibleItems.map((li, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.liRow,
+                      { borderBottomColor: colors.lineStrong },
+                    ]}
+                  >
                     <Text
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor:
-                            category === c ? colors.moss : colors.paperRaised,
-                          borderColor:
-                            category === c ? colors.moss : colors.lineStrong,
-                          color:
-                            category === c
-                              ? colors.paperRaised
-                              : colors.inkSoft,
-                          fontWeight: category === c ? '700' : '400',
-                        },
-                      ]}
+                      style={{ color: colors.inkSoft, fontSize: 12, flex: 1 }}
+                      numberOfLines={1}
                     >
-                      {c}
+                      {li.description}
                     </Text>
-                  </TouchableOpacity>
+                    <Money value={li.total} size={12} />
+                  </View>
                 ))}
-              </View>
-              <Text
-                style={{
-                  color: colors.inkFaint,
-                  fontSize: 10.5,
-                  fontStyle: 'italic',
-                  marginTop: 8,
-                }}
-              >
-                The model reads the receipt. It never guesses a category —
-                that's always your tap.
-              </Text>
-            </View>
+                {hiddenCount > 0 && (
+                  <Text
+                    style={{
+                      color: colors.inkFaint,
+                      fontSize: 11,
+                      fontStyle: 'italic',
+                      paddingVertical: 6,
+                    }}
+                  >
+                    + {hiddenCount} more items
+                  </Text>
+                )}
 
-            <TouchableOpacity
-              style={[
-                styles.saveBtn,
-                {
-                  backgroundColor: colors.moss,
-                  opacity: category && !saving ? 1 : 0.5,
-                },
-              ]}
-              disabled={!category || saving}
-              onPress={onSave}
-            >
-              <Text
-                style={{
-                  color: colors.paperRaised,
-                  fontWeight: '700',
-                  fontSize: 13.5,
-                }}
-              >
-                {saving
-                  ? 'Saving…'
-                  : category
-                  ? 'Save to ledger'
-                  : 'Pick a category to save'}
-              </Text>
-            </TouchableOpacity>
+                <View
+                  style={[styles.totals, { borderTopColor: colors.lineStrong }]}
+                >
+                  <View style={styles.totalsRow}>
+                    <Text style={{ color: colors.inkSoft, fontSize: 12 }}>
+                      Subtotal
+                    </Text>
+                    <Money value={subtotal} size={12} />
+                  </View>
+                  <View style={styles.totalsRow}>
+                    <Text style={{ color: colors.inkSoft, fontSize: 12 }}>
+                      Tax
+                    </Text>
+                    <Money value={fields.tax} size={12} />
+                  </View>
+                  <View style={styles.totalsRow}>
+                    <Text style={{ color: colors.ink, fontSize: 15 }}>
+                      Total
+                    </Text>
+                    <Money value={fields.total} size={15} emphasis />
+                  </View>
+                </View>
+
+                <View style={styles.categoryPicker}>
+                  <SectionLabel>Category — your choice</SectionLabel>
+                  <View style={styles.chipRow}>
+                    {CATEGORIES.map(c => (
+                      <TouchableOpacity key={c} onPress={() => setCategory(c)}>
+                        <Text
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor:
+                                category === c
+                                  ? colors.moss
+                                  : colors.paperRaised,
+                              borderColor:
+                                category === c
+                                  ? colors.moss
+                                  : colors.lineStrong,
+                              color:
+                                category === c
+                                  ? colors.paperRaised
+                                  : colors.inkSoft,
+                              fontWeight: category === c ? '700' : '400',
+                            },
+                          ]}
+                        >
+                          {c}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text
+                    style={{
+                      color: colors.inkFaint,
+                      fontSize: 10.5,
+                      fontStyle: 'italic',
+                      marginTop: 8,
+                    }}
+                  >
+                    The model reads the receipt. It never guesses a category —
+                    that's always your tap.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.saveBtn,
+                    {
+                      backgroundColor: colors.moss,
+                      opacity: category && !saving ? 1 : 0.5,
+                    },
+                  ]}
+                  disabled={!category || saving}
+                  onPress={onSave}
+                >
+                  <Text
+                    style={{
+                      color: colors.paperRaised,
+                      fontWeight: '700',
+                      fontSize: 13.5,
+                    }}
+                  >
+                    {saving
+                      ? 'Saving…'
+                      : category
+                      ? 'Save to ledger'
+                      : 'Pick a category to save'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </Card>
         )}
       </ScrollView>
@@ -368,6 +477,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   retakeRow: { marginBottom: 10 },
+  extractingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+  },
   vendor: { fontSize: 17, marginBottom: 2 },
   liRow: {
     flexDirection: 'row',
