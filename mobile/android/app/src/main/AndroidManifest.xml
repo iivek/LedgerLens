@@ -17,6 +17,17 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <!--
+        Lets llama.rn load the on-device GPU acceleration path where it
+        exists (Adreno 700+ / Snapdragon 8 Gen 1+, per its README).
+        required="false" so install/launch stays fine on chips without it
+        (confirmed necessary: this project's own test device is a
+        Snapdragon 778G+/Adreno 642L, a generation below that tier, and
+        falls back to CPU-only exactly as intended with this flag set).
+      -->
+      <uses-native-library
+        android:name="libOpenCL.so"
+        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
