@@ -77,6 +77,18 @@ export default function ScanScreen() {
     runExtraction(path);
   }
 
+  // Dev-only escape hatch: pushed via adb to a fixed path for testing
+  // extraction against a real receipt photo when the physical camera isn't
+  // pointed at anything useful (e.g. bench-testing a phone hands-off).
+  // Goes through the exact same runExtraction() path a real capture does.
+  function onUseTestImage() {
+    const path = '/data/user/0/com.ledgerlensapp/files/test-receipt.jpg';
+    setCapturedPath(path);
+    setCategory(null);
+    setCaptureError(null);
+    runExtraction(path);
+  }
+
   async function runExtraction(path: string) {
     const requestId = ++extractionIdRef.current;
     setExtracting(true);
@@ -86,6 +98,11 @@ export default function ScanScreen() {
       const raw = await extractReceipt(path);
       if (requestId !== extractionIdRef.current) return; // superseded by a retake
       if (raw) {
+        // Deliberately always logged, not just on failure -- a JS-context
+        // reload (e.g. Metro reconnecting after Doze suspends it during a
+        // long background run) can orphan this promise's UI-side update
+        // with nothing else showing the result actually arrived.
+        console.log('[LedgerLens] extraction succeeded:', JSON.stringify(raw));
         setExtraction(raw);
       } else {
         setExtractionError(
@@ -244,6 +261,16 @@ export default function ScanScreen() {
           >
             {captureError}
           </Text>
+        )}
+        {__DEV__ && !capturedPath && (
+          <TouchableOpacity
+            onPress={onUseTestImage}
+            style={{ alignItems: 'center', marginBottom: spacing.md }}
+          >
+            <Text style={{ color: colors.inkFaint, fontSize: 11.5 }}>
+              (dev) use test image instead of camera
+            </Text>
+          </TouchableOpacity>
         )}
 
         {capturedPath && (
