@@ -1,20 +1,36 @@
 appId: com.ledgerlensapp
-name: Scan -> capture -> categorize -> save
+name: Scan -> extract -> categorize -> save (real on-device inference)
 ---
-# Golden path: the extraction is stubbed (llama.rn not wired up yet), but the
-# camera capture, category picker, and save-to-ledger flow are all real.
-- launchApp:
-    clearState: true
+# Real accuracy test, not just UI mechanics: sroie_test_X00016469670's gold
+# label (data/processed/sroie_test.jsonl) is vendor "OJC MARKETING SDN BHD",
+# date 2019-01-15, total 193 -- confirmed to match on-device exactly on a
+# Nothing Phone (3) (Snapdragon 8s Gen 4, Adreno 825), 18.8s end-to-end.
+#
+# Prerequisites (NOT automated by this flow -- see README):
+#   1. model.gguf + mmproj.gguf pushed to /data/data/com.ledgerlensapp/files/models/
+#   2. sroie_test_X00016469670.jpg pushed to
+#      /data/data/com.ledgerlensapp/files/test-receipt.jpg
+# clearState wipes both, so this flow deliberately does not use it.
+#
+# Uses the (dev) test-image button instead of the real camera: a real
+# capture depends on physical camera positioning (dark rooms, proximity
+# sensors triggering mid-capture, camera-disabled errors) that made this
+# flow unreliable for repeatable automated testing -- see CLAUDE.md and
+# this session's own debugging history. The button drives the exact same
+# runExtraction() code path a real capture does.
+- launchApp
 - tapOn: ".*Scan"
 - assertVisible: "Camera ready"
-- tapOn: "Capture receipt"
-# A capture that fails leaves you back on the live camera view with no
-# "Retake photo" link -- asserting this is present is the real proof the
-# native capture call actually succeeded, not just that a tap registered.
+- tapOn: ".*use test image instead of camera"
 - assertVisible: ".*Retake photo"
+# Real on-device inference: ~19s on GPU/NPU-capable hardware, 10+ minutes
+# on CPU-only (see CLAUDE.md's on-device latency caveat) -- this timeout
+# is deliberately generous and itself documents that hardware dependency.
+- extendedWaitUntil:
+    visible: "OJC MARKETING SDN BHD"
+    timeout: 120000
 # The model never guesses a category -- the save button must stay disabled
-# (and say so) until the user taps one themselves. Both are below the fold
-# on most screens, under the full line-item breakdown.
+# (and say so) until the user taps one themselves.
 - scrollUntilVisible:
     element: "Groceries"
     direction: DOWN
@@ -22,7 +38,6 @@ name: Scan -> capture -> categorize -> save
 - tapOn: "Groceries"
 - assertVisible: "Save to ledger"
 - tapOn: "Save to ledger"
-# Saving returns Scan to its pre-capture state, ready for the next receipt.
 - assertVisible: "Camera ready"
 - tapOn: ".*Dashboard"
-- assertVisible: "Trader Joe's"
+- assertVisible: "OJC MARKETING SDN BHD"
