@@ -18,45 +18,36 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
-        libOpenCL.so access is deliberately NOT declared here; CPU-only
-        fallback is the safe default until the GPU path is re-verified (see
-        below).
+        Lets llama.rn load libOpenCL.so for GPU-accelerated inference.
 
-        HISTORY: first tried on 2026-08-16 with a Snapdragon 778G+ / Adreno
-        642L device (this project's other test phone, an A6x-class GPU).
-        libOpenCL.so loaded, but llama.rn's OpenCL backend registration then
-        called ggml_abort(), a hard SIGABRT crash, not a graceful fallback,
-        because that GPU isn't in its supported tier, a real, confirmed,
-        unaddressed risk for any device outside the verified support tier,
-        since this is a single shared manifest with no runtime chip-tier
-        detection. Reverted, then re-enabled on 2026-08-16 specifically to
-        test a Nothing Phone (3) (Snapdragon 8s Gen 4 / SM8735, Adreno 825)
-        which worked perfectly for hours: 18.8s extractions, exact-match
-        accuracy.
+        REQUIRES a supported Adreno/OpenCL tier (verified: Adreno 825 on a
+        Nothing Phone 3, Snapdragon 8s Gen 4). CONFIRMED UNSAFE on a
+        Snapdragon 778G+ / Adreno 642L device (2026-08-16): OpenCL backend
+        registration called ggml_abort(), a hard SIGABRT crash, not a
+        graceful fallback, because that GPU isn't in llama.cpp's supported
+        tier. This is a single shared manifest with no runtime chip-tier
+        detection, so installing this build on unsupported hardware WILL
+        crash on model load. Do not ship broadly with this declared until
+        that gap is closed (runtime capability check, or confirmation from
+        a newer llama.rn that registration fails gracefully instead of
+        aborting).
 
-        2026-08-17: on that same Nothing Phone 3, extraction started
-        failing with empty/hallucinated output (not a crash). At the time
-        this was suspected to be OpenCL backend degradation and "fixed" by
-        removing this declaration, but that fix was never actually
-        verified, and it was the wrong theory. ROOT CAUSE, established the
-        same session via `dumpsys thermalservice`: severe SoC thermal
-        throttling (Thermal Status SEVERE, CPU cores 79.6-99.9C) from
-        sustained back-to-back extractions, corroborated by an emulator
-        control comparison (CPU-only, no OpenCL involved at all) producing
-        the correct result once thermally unconstrained. See CLAUDE.md's
-        mobile caveat section for the full evidence chain.
-
-        2026-08-24 re-verification: same phone, now cooled (live sensors
-        34-53C during the run, Thermal Status LIGHT at most), same code,
-        still WITHOUT this declaration (CPU-only fallback); extraction
-        succeeded with an exact-match result. This confirms heat was the
-        real cause, but does NOT tell us whether OpenCL registration itself
-        was ever actually degraded, since the GPU path wasn't re-tested.
-        Left disabled here rather than restored: re-enabling the
-        accelerated path needs its own deliberate re-test on cooled
-        hardware with thermals monitored throughout, given the confirmed
-        778G+ crash risk this manifest still carries either way.
+        HISTORY: on the Nothing Phone 3, this measured 18.8s extractions
+        with exact-match accuracy (2026-08-16), then was suspected (wrongly)
+        of degrading and removed (2026-08-17) when extraction started
+        failing; the real cause, found the same session, was severe SoC
+        thermal throttling (Thermal Status SEVERE, CPU cores up to 99.9C),
+        confirmed via `dumpsys thermalservice` and an emulator control
+        comparison. Re-verified cool and correct with this declaration
+        ABSENT on 2026-08-24 (CPU-only, ~2min/extraction). Re-enabling here
+        the same day specifically to re-verify the accelerated path on the
+        now-cooled Nothing Phone 3, with thermals monitored throughout the
+        test; see CLAUDE.md's mobile caveat section for the full evidence
+        chain and this re-verification's result once recorded.
       -->
+      <uses-native-library
+        android:name="libOpenCL.so"
+        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

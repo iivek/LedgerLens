@@ -34,25 +34,26 @@ function loadModel(): Promise<LlamaContext> {
       // measured on, and slow enough on phone CPU to make extraction take
       // several minutes instead of seconds.
       //
-      // use_gpu: false is deliberate, not the library default (true).
-      // initMultimodal() returns a boolean rather than always throwing on
-      // failure -- found by direct on-device investigation (a CDP capture
-      // of the app's real console output, since neither Android logcat nor
-      // Metro's own terminal could surface it on this device) after 8+
-      // reproducible extractions that ran to completion, at normal timing,
-      // with zero errors, but returned all-null/empty fields regardless of
-      // which image was queued. A /proc/<pid>/maps memory-mapping check
-      // confirmed model.gguf was mapped but mmproj.gguf never was -- the
-      // vision tower silently never loaded even though this call's Promise
-      // resolved without throwing. Forcing CPU for multimodal specifically
-      // (independent of the main LLM's own backend) avoids whatever GPU
-      // registration path was failing silently for the vision tower; the
-      // explicit success check below is the actual fix -- if this returns
-      // false, loading is treated as a hard failure instead of proceeding
-      // with a context that can't see images.
+      // use_gpu: true (2026-08-24) -- previously forced false after 8+
+      // extractions returned all-null/empty fields with a /proc/<pid>/maps
+      // check showing mmproj.gguf never memory-mapped. That evidence was
+      // later found unreliable (vision-tower weights plausibly load via
+      // read() into a heap buffer, not mmap(), so absence from /proc/maps
+      // was never proof of anything -- see CLAUDE.md's mobile caveat
+      // section), and the actual root cause of that symptom, found the
+      // same investigation, was severe SoC thermal throttling, unrelated
+      // to this flag. Re-enabled because the vision-tower prefill is ~99%
+      // of wall-clock time (see the CPU-only 11.3min breakdown in
+      // CLAUDE.md) -- forcing it to CPU while only the LLM decode got GPU
+      // access measured *slower* than pure CPU-only (2.5min vs ~2.1min,
+      // 2026-08-24), confirming this is the flag that actually matters for
+      // the 18.8s number. The explicit success check below is still the
+      // real safeguard regardless of backend: if this returns false,
+      // loading is treated as a hard failure instead of proceeding with a
+      // context that can't see images.
       const multimodalOk = await context.initMultimodal({
         path: MMPROJ_PATH,
-        use_gpu: false,
+        use_gpu: true,
         image_min_tokens: 256,
         image_max_tokens: 1280,
       });
