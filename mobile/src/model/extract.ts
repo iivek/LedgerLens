@@ -33,13 +33,49 @@ function loadModel(): Promise<LlamaContext> {
       // single receipt photo -- 3x+ more than the model was ever trained or
       // measured on, and slow enough on phone CPU to make extraction take
       // several minutes instead of seconds.
-      await context.initMultimodal({
+      //
+      // use_gpu: false is deliberate, not the library default (true).
+      // initMultimodal() returns a boolean rather than always throwing on
+      // failure -- found by direct on-device investigation (a CDP capture
+      // of the app's real console output, since neither Android logcat nor
+      // Metro's own terminal could surface it on this device) after 8+
+      // reproducible extractions that ran to completion, at normal timing,
+      // with zero errors, but returned all-null/empty fields regardless of
+      // which image was queued. A /proc/<pid>/maps memory-mapping check
+      // confirmed model.gguf was mapped but mmproj.gguf never was -- the
+      // vision tower silently never loaded even though this call's Promise
+      // resolved without throwing. Forcing CPU for multimodal specifically
+      // (independent of the main LLM's own backend) avoids whatever GPU
+      // registration path was failing silently for the vision tower; the
+      // explicit success check below is the actual fix -- if this returns
+      // false, loading is treated as a hard failure instead of proceeding
+      // with a context that can't see images.
+      const multimodalOk = await context.initMultimodal({
         path: MMPROJ_PATH,
+        use_gpu: false,
         image_min_tokens: 256,
         image_max_tokens: 1280,
       });
+      // Belt-and-braces: on-device evidence (a /proc/<pid>/maps check
+      // showing mmproj.gguf never actually memory-mapped) showed
+      // initMultimodal() can resolve true even when the projector didn't
+      // really load, so its own return value isn't trustworthy alone --
+      // cross-check with the dedicated status query too.
+      const reallyEnabled = await context.isMultimodalEnabled();
+      if (!multimodalOk || !reallyEnabled) {
+        throw new Error(
+          `initMultimodal did not actually enable vision (initMultimodal=${multimodalOk}, isMultimodalEnabled=${reallyEnabled})`,
+        );
+      }
       return context;
     })();
+    // On failure, clear the memoized promise so the next extraction attempt
+    // gets a fresh load rather than permanently replaying this rejection --
+    // without this, one bad load would brick every future scan for the rest
+    // of the app session.
+    contextPromise.catch(() => {
+      contextPromise = null;
+    });
   }
   return contextPromise;
 }

@@ -1,0 +1,27 @@
+appId: com.ledgerlensapp
+name: Continuation - expand -> edit fields -> categorize -> save (no relaunch)
+---
+# Companion to 04_scan_edit_save_demo.yaml, split out specifically because
+# on-device cold-load extraction on this host has been taking 15-30+ minutes
+# under sustained load-average-8+ contention (see CLAUDE.md) -- once a queue
+# item has actually finished extracting, this picks up from there WITHOUT
+# launchApp, so it doesn't discard the in-memory queue and force another
+# multi-minute cold load just to re-demo the fast, interactive part.
+- tapOn: "WESTERN EASTERN STATIONERY SDN. BHD"
+- scrollUntilVisible:
+    element: "Category — your choice"
+    direction: DOWN
+- tapOn: "Transport"
+- assertVisible: "Save to ledger"
+- tapOn: "Save to ledger"
+# save() -> refresh() -> discard() is a brief async chain, not instant --
+# a bare assertNotVisible raced it once and failed even though the item was
+# genuinely gone a moment later (confirmed by re-checking the queue count).
+- extendedWaitUntil:
+    notVisible: "SCAN QUEUE"
+    timeout: 10000
+- tapOn: ".*Dashboard"
+# Same reasoning: Dashboard's useFocusEffect refresh is async too.
+- extendedWaitUntil:
+    visible: "WESTERN EASTERN STATIONERY SDN. BHD"
+    timeout: 10000

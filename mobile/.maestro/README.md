@@ -9,15 +9,26 @@ Install: https://maestro.mobile.dev (`curl -fsSL "https://get.maestro.mobile.dev
 
 ## Flows
 
-- `01_scan_capture_categorize_save.yaml` -- real on-device extraction accuracy test: extracts a
+- `01_scan_capture_categorize_save.yaml` -- real on-device extraction accuracy test: queues a
   known SROIE test receipt and asserts the exact gold vendor name, category-required gate, save,
   shows up on Dashboard. **Requires manual one-time device setup, see below.**
-- `02_retake_photo.yaml` -- retake actually returns to a capturable *camera*, not just a visual
-  reset. Deliberately still camera-based (that's what it's testing); everything else uses the
-  dev test-image button instead, see below.
+- `02_capture_queue_discard.yaml` -- capturing twice in a row never blocks (no freeze-frame/retake
+  step exists anymore -- see "Scan queue" below), and discarding a queued/still-extracting item
+  actually removes it without crashing. Deliberately still camera-based (that's what it's
+  testing); everything else uses the dev test-image button instead, see below.
 - `03_receipt_detail_delete_to_empty_state.yaml` -- detail view, delete confirmation, deleting
   everything lands on the real empty state (regression coverage for the seed-on-every-empty-boot
   bug).
+
+## Scan queue
+
+Capture (or the dev test-image button) no longer blocks on a single review screen -- it enqueues
+immediately and the camera stays live for the next shot. A background worker
+(`src/model/scanQueue.ts`) processes the queue strictly one item at a time (there's only one
+on-device model context to share, no real parallelism), updating each row's status as it goes.
+Tapping a finished (`done`) row expands it into the category-picker-then-save card; `error` rows
+get a Retry; any row can be discarded via its `✕` (`testID="queue-discard-<index>"`), which also
+cancels the native inference if that item happens to be the one currently extracting.
 
 ## Setup required for `01`
 
@@ -37,10 +48,10 @@ adb push data/processed/images/sroie_test/sroie_test_X00016469670.jpg /data/loca
 adb shell run-as com.ledgerlensapp cp /data/local/tmp/test-receipt.jpg /data/data/com.ledgerlensapp/files/test-receipt.jpg
 ```
 
-`01` taps the `__DEV__`-only "use test image instead of camera" button on the Scan screen instead
+`01` taps the `__DEV__`-only "queue test image instead of camera" button on the Scan screen instead
 of driving the real camera -- real capture depends on physical camera positioning (dark rooms,
 proximity-sensor locks mid-capture) that made this flow unreliable for repeatable automated
-testing. The button runs the exact same `runExtraction()` code path a real capture does.
+testing. The button runs the exact same `enqueue()` code path a real capture does.
 
 ## Known caveat: on-device extraction speed is hardware-gated
 
@@ -67,3 +78,7 @@ it passes every time.
 
 If `02` hangs or fails only on the emulator, don't chase it there -- run it against a real device
 (`maestro --device <serial>`) instead. `03` has no camera dependency and is reliable on either.
+
+Also note `02`'s two `queue-discard-0` taps race the background worker (the item at index 0 may
+still be `queued` or already `processing`/`done` by the time each tap lands) -- that's deliberate,
+not flaky-test tolerance: discarding at any of those stages is exactly the behavior being tested.

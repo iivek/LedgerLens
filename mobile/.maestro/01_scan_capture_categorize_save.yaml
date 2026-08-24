@@ -1,5 +1,5 @@
 appId: com.ledgerlensapp
-name: Scan -> extract -> categorize -> save (real on-device inference)
+name: Scan -> queue -> extract -> categorize -> save (real on-device inference)
 ---
 # Real accuracy test, not just UI mechanics: sroie_test_X00016469670's gold
 # label (data/processed/sroie_test.jsonl) is vendor "OJC MARKETING SDN BHD",
@@ -17,27 +17,30 @@ name: Scan -> extract -> categorize -> save (real on-device inference)
 # sensors triggering mid-capture, camera-disabled errors) that made this
 # flow unreliable for repeatable automated testing -- see CLAUDE.md and
 # this session's own debugging history. The button drives the exact same
-# runExtraction() code path a real capture does.
+# enqueue() -> scanQueue.ts code path a real capture does.
 - launchApp
 - tapOn: ".*Scan"
 - assertVisible: "Camera ready"
-- tapOn: ".*use test image instead of camera"
-- assertVisible: ".*Retake photo"
+- tapOn: ".*queue test image instead of camera"
+- assertVisible: "SCAN QUEUE"
 # Real on-device inference: ~19s on GPU/NPU-capable hardware, 10+ minutes
 # on CPU-only (see CLAUDE.md's on-device latency caveat) -- this timeout
 # is deliberately generous and itself documents that hardware dependency.
 - extendedWaitUntil:
     visible: "OJC MARKETING SDN BHD"
     timeout: 120000
+# Tap the finished queue row to expand its review card.
+- tapOn: "OJC MARKETING SDN BHD"
+- assertVisible: "KINGS SAFETY SHOES KWD 805"
 # The model never guesses a category -- the save button must stay disabled
 # (and say so) until the user taps one themselves.
+- assertVisible: "Pick a category to save"
 - scrollUntilVisible:
     element: "Groceries"
     direction: DOWN
-- assertVisible: "Pick a category to save"
 - tapOn: "Groceries"
 - assertVisible: "Save to ledger"
 - tapOn: "Save to ledger"
-- assertVisible: "Camera ready"
+- assertNotVisible: "SCAN QUEUE"
 - tapOn: ".*Dashboard"
 - assertVisible: "OJC MARKETING SDN BHD"

@@ -62,6 +62,24 @@ export async function addReceipt(receipt: Receipt): Promise<void> {
   });
 }
 
+/** Updates the receipt's own fields only -- line items aren't editable
+ * (see ReceiptDetailScreen), so there's nothing to reconcile there. */
+export async function updateReceipt(receipt: Receipt): Promise<void> {
+  const db = getDB();
+  await db.execute(
+    'UPDATE receipts SET vendor = ?, date = ?, currency = ?, total = ?, tax = ?, category = ? WHERE id = ?;',
+    [
+      receipt.vendor,
+      receipt.date,
+      receipt.currency,
+      receipt.total,
+      receipt.tax,
+      receipt.category,
+      receipt.id,
+    ],
+  );
+}
+
 export async function deleteReceipt(id: string): Promise<void> {
   const db = getDB();
   await db.execute('DELETE FROM receipts WHERE id = ?;', [id]);

@@ -13,5 +13,3 @@ export const CATEGORY_ICON: Record<string, string> = {
   Health: '✚',
   Transport: '⛽',
 };
-
-export const monthlyBudget = 600;

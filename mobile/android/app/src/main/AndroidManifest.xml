@@ -18,33 +18,45 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
-        Lets llama.rn load libOpenCL.so for GPU-accelerated inference.
-
-        RE-ENABLED 2026-08-16 specifically to test on a Nothing Phone (3)
-        (Snapdragon 8s Gen 4 / SM8735, Adreno 825), two generations past
-        the floor llama.cpp's own OPENCL.md lists as verified (Adreno 750,
-        Snapdragon 8 Gen 3; A6x-series GPUs are explicitly called out there
-        as "likely not supported due to outdated driver and compiler").
+        libOpenCL.so access is deliberately NOT declared here; CPU-only
+        fallback is the safe default until the GPU path is re-verified (see
+        below).
 
         HISTORY: first tried on 2026-08-16 with a Snapdragon 778G+ / Adreno
         642L device (this project's other test phone, an A6x-class GPU).
         libOpenCL.so loaded, but llama.rn's OpenCL backend registration then
         called ggml_abort(), a hard SIGABRT crash, not a graceful fallback,
-        because that GPU isn't in its supported tier. Reverted at the time;
-        without this declaration, libOpenCL.so fails to load at all and
-        llama.rn falls back to its next-best CPU-only variant cleanly.
+        because that GPU isn't in its supported tier, a real, confirmed,
+        unaddressed risk for any device outside the verified support tier,
+        since this is a single shared manifest with no runtime chip-tier
+        detection. Reverted, then re-enabled on 2026-08-16 specifically to
+        test a Nothing Phone (3) (Snapdragon 8s Gen 4 / SM8735, Adreno 825)
+        which worked perfectly for hours: 18.8s extractions, exact-match
+        accuracy.
 
-        REMAINING RISK: this is a single shared manifest, so installing
-        this same build on unsupported hardware (e.g. that 778G+ device
-        again) will reproduce the crash. Not yet safe to ship broadly as
-        is; would need either runtime chip-capability detection before
-        attempting the OpenCL variant, or confirmation from a newer
-        llama.rn that this registration path fails gracefully instead of
-        aborting.
+        2026-08-17: on that same Nothing Phone 3, extraction started
+        failing with empty/hallucinated output (not a crash). At the time
+        this was suspected to be OpenCL backend degradation and "fixed" by
+        removing this declaration, but that fix was never actually
+        verified, and it was the wrong theory. ROOT CAUSE, established the
+        same session via `dumpsys thermalservice`: severe SoC thermal
+        throttling (Thermal Status SEVERE, CPU cores 79.6-99.9C) from
+        sustained back-to-back extractions, corroborated by an emulator
+        control comparison (CPU-only, no OpenCL involved at all) producing
+        the correct result once thermally unconstrained. See CLAUDE.md's
+        mobile caveat section for the full evidence chain.
+
+        2026-08-24 re-verification: same phone, now cooled (live sensors
+        34-53C during the run, Thermal Status LIGHT at most), same code,
+        still WITHOUT this declaration (CPU-only fallback); extraction
+        succeeded with an exact-match result. This confirms heat was the
+        real cause, but does NOT tell us whether OpenCL registration itself
+        was ever actually degraded, since the GPU path wasn't re-tested.
+        Left disabled here rather than restored: re-enabling the
+        accelerated path needs its own deliberate re-test on cooled
+        hardware with thermals monitored throughout, given the confirmed
+        778G+ crash risk this manifest still carries either way.
       -->
-      <uses-native-library
-        android:name="libOpenCL.so"
-        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

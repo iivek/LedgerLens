@@ -1,0 +1,30 @@
+appId: com.ledgerlensapp
+name: Camera stays capturable across shots; discard cancels a queued item
+---
+# Successor to the old "retake returns to a live camera" regression test.
+# The scan-queue redesign (see CLAUDE.md's mobile/ architecture bullet)
+# removed the captured-photo freeze-frame and Retake button entirely --
+# capture now always enqueues immediately and leaves the live camera
+# visible, so there's no manual reset step left to test. This instead
+# covers the new equivalent concerns: capturing repeatedly never blocks on
+# the previous shot, and discarding a queued/still-extracting item actually
+# removes it -- including cancelling the native inference if it was the one
+# currently running (see scanQueue.ts's discard()), without crashing.
+- launchApp:
+    clearState: true
+- tapOn: ".*Scan"
+- assertVisible: "Camera ready"
+- tapOn: "Capture receipt"
+- assertVisible: "SCAN QUEUE"
+# The camera never freezes/blocks now -- a second capture works immediately,
+# with no reset step in between, queuing a second item behind the first.
+- tapOn: "Capture receipt"
+- assertVisible: "Camera ready"
+# Discard both queued items regardless of whether each is still queued or
+# already extracting by the time this runs -- either way it must not crash
+# and must leave the queue empty again.
+- tapOn:
+    id: "queue-discard-0"
+- tapOn:
+    id: "queue-discard-0"
+- assertNotVisible: "SCAN QUEUE"

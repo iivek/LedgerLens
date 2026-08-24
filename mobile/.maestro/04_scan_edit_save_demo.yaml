@@ -1,0 +1,63 @@
+appId: com.ledgerlensapp
+name: Scan -> extract -> expand -> edit fields -> categorize -> save (demo)
+---
+# Marketing/demo flow: drives the dev test-image bypass (not the real camera,
+# for reliability -- see 01's own header for why), then exercises the new
+# editable-fields review card end to end.
+#
+# Long-chased false lead, resolved: the row's expand toggle looked broken for
+# hours across many sessions (bare assertVisible: "Vendor" failing right after
+# the tap, on both Maestro's element tap and raw `adb shell input tap`, code
+# reviewed clean, state confirmed correct via a CDP-exposed debug hook). The
+# real cause: the queue card sits near the bottom of a ScrollView, so the
+# expanded content renders correctly but off-screen below the fold --
+# `uiautomator dump` doesn't report it, and assertVisible correctly reports
+# it as not visible (it genuinely isn't, on screen, without scrolling). Fix
+# is exactly the scrollUntilVisible below, not a different tap strategy.
+- launchApp
+# NOT clearState: true -- the scan queue (scanQueue.ts) is a module-level
+# in-memory array, not persisted, so a plain process restart already clears
+# it; clearState would instead wipe the manually-staged model/mmproj files
+# under app storage, which nothing in the app re-stages automatically.
+# Cold start on the emulator: Metro bundle fetch + JS hydration can take well
+# beyond Maestro's default tapOn timeout, so the very first interaction needs
+# its own explicit wait -- discovered because a bare tapOn here failed with
+# "Element not found: .*Scan" even though the tab bar renders fine seconds
+# later (confirmed via adb screencap taken right after the failed run).
+- extendedWaitUntil:
+    visible: ".*Scan"
+    timeout: 60000
+- tapOn: ".*Scan"
+# Same class of race as the app-hydration wait above: the camera session
+# badge flips to "Camera ready" asynchronously after the tab mounts -- a
+# bare assertVisible passed on one run and failed on the next with identical
+# code/state, so it needs the same explicit wait, not a fixed assert.
+- extendedWaitUntil:
+    visible: "Camera ready"
+    timeout: 30000
+- tapOn: ".*queue test image instead of camera"
+- assertVisible: "SCAN QUEUE"
+# Real on-device inference: on a CPU-only emulator this can take several
+# minutes (see CLAUDE.md's on-device latency caveat), with real observed
+# variance run-to-run on this host: ~7min, ~10min, ~14min across three back-
+# to-back attempts (confirmed via uiautomator polling, not assumed) -- likely
+# host-machine contention from repeated emulator+JVM+encoder load stacking up
+# over a long session, not app-side throttling. Widened well past the worst
+# case seen so far.
+- extendedWaitUntil:
+    visible: "WESTERN EASTERN STATIONERY"
+    timeout: 900000
+- tapOn: "WESTERN EASTERN STATIONERY SDN. BHD"
+- scrollUntilVisible:
+    element: "Vendor"
+    direction: DOWN
+- assertVisible: "Category — your choice"
+- scrollUntilVisible:
+    element: "Transport"
+    direction: DOWN
+- tapOn: "Transport"
+- assertVisible: "Save to ledger"
+- tapOn: "Save to ledger"
+- assertNotVisible: "SCAN QUEUE"
+- tapOn: ".*Dashboard"
+- assertVisible: "WESTERN EASTERN STATIONERY SDN. BHD"

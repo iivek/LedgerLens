@@ -17,8 +17,9 @@ import {
   SectionLabel,
 } from '../components/Primitives';
 import { DonutChart } from '../components/DonutChart';
-import { CATEGORY_ICON, monthlyBudget } from '../constants';
+import { CATEGORY_ICON } from '../constants';
 import { categoryBreakdown, totalSpent } from '../utils/receiptMath';
+import { useBudget } from '../storage/useBudget';
 import { useReceiptsStore } from '../storage/useReceiptsStore';
 import { fonts, spacing } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
@@ -37,17 +38,19 @@ export default function DashboardScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { receipts, refresh } = useReceiptsStore();
+  const { budget, refresh: refreshBudget } = useBudget();
   // Refetch whenever this tab regains focus -- a receipt saved on the Scan
-  // tab wouldn't otherwise appear here until some other state change
-  // happened to re-render this screen.
+  // tab (or a budget edited in Settings) wouldn't otherwise appear here
+  // until some other state change happened to re-render this screen.
   useFocusEffect(
     React.useCallback(() => {
       refresh();
-    }, [refresh]),
+      refreshBudget();
+    }, [refresh, refreshBudget]),
   );
 
   const spent = totalSpent(receipts);
-  const budgetPct = monthlyBudget > 0 ? Math.min(spent / monthlyBudget, 1) : 0;
+  const budgetPct = budget > 0 ? Math.min(spent / budget, 1) : 0;
   const breakdown = categoryBreakdown(receipts);
   const recent = [...receipts].sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -90,7 +93,7 @@ export default function DashboardScreen() {
                     fontSize: 13,
                   }}
                 >
-                  <Money value={spent} size={15} emphasis /> / ${monthlyBudget}
+                  <Money value={spent} size={15} emphasis /> / ${budget}
                 </Text>
               </View>
               <View

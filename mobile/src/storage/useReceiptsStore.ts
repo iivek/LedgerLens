@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Receipt } from '../types';
-import { addReceipt, listReceipts } from './receipts';
+import { addReceipt, listReceipts, updateReceipt } from './receipts';
 
 /** Single hook every screen reads the ledger through, so "save a receipt on
  * Scan" and "see it on Dashboard/Overview" stay in sync without a bigger
@@ -28,5 +28,13 @@ export function useReceiptsStore() {
     [refresh],
   );
 
-  return { receipts, loading, refresh, save };
+  const update = useCallback(
+    async (receipt: Receipt) => {
+      await updateReceipt(receipt);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return { receipts, loading, refresh, save, update };
 }
