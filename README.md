@@ -4,6 +4,22 @@
 
 > **Status: Weekend 2 — LoRA-distilled Qwen2-VL-2B is trained, evaluated (fp16 and deployment-format GGUF), and beats both the stock 2B baseline and the Qwen2.5-VL-7B teacher.** Weekend 3 (PTQ/pruning compression grid) is in progress. Every number below comes straight from `results/results.csv` / `results/efficiency.csv`, produced by `uv run ledgerlens eval` / `scripts/bench_efficiency.py` — nothing here is hand-computed.
 
+## Try it in two minutes
+
+Photo of a receipt in, JSON out, on your laptop, fully offline after a one-time 2.3 GB download.
+
+```sh
+brew install llama.cpp          # or grab a release build with mtmd from github.com/ggml-org/llama.cpp
+git clone https://github.com/iivek/LedgerLens && cd LedgerLens
+scripts/demo.sh path/to/receipt.jpg
+```
+
+The script downloads the distilled model (`Q4_K_M` GGUF + `f16` vision tower) from
+[Hugging Face: ii42/LedgerLens-Qwen2-VL-2B-Receipts-GGUF](https://huggingface.co/ii42/LedgerLens-Qwen2-VL-2B-Receipts-GGUF)
+into `models/gguf/` and runs `llama-mtmd-cli` with the exact prompt the model was trained on.
+Expect roughly 3-15 s per receipt on Apple Silicon, longer on CPU-only machines.
+Weights are research/noncommercial-only, see [License](#license).
+
 ## Baseline: stock Qwen2-VL-2B, zero fine-tuning
 
 Measured on this repo's own eval harness, running the deployment runtime (llama.cpp, this exact GGUF) locally on a MacBook M1 Pro — not a rented GPU, not the phone yet. `fields_em_mean` averages only the fields each dataset actually annotates (SROIE: vendor/date/total; CORD: total/tax/line-items — see [CLAUDE.md](CLAUDE.md) on why).
@@ -108,9 +124,9 @@ uv run ledgerlens eval --runner hf --model Qwen/Qwen2-VL-2B-Instruct \
 Appends one aggregate row to `results/results.csv` and persists per-sample raw outputs to `runs/<tag>/predictions.jsonl` for audit. The `llamacpp` runner evaluates the *deployed* GGUF through a local `llama-server`, i.e. the same runtime the phone uses:
 
 ```sh
-llama-server -m models/gguf/ledgerlens-q4_k_m.gguf --mmproj models/gguf/mmproj-ledgerlens-f16.gguf -c 4096 --port 8080
+llama-server -m models/gguf/sft2b-teacher-agree-q4_k_m.gguf --mmproj models/gguf/mmproj-sft2b-teacher-agree-f16.gguf -c 4096 --port 8080
 uv run ledgerlens eval --runner llamacpp --split data/processed/cord_test.jsonl \
-    --model-path models/gguf/ledgerlens-q4_k_m.gguf --mmproj-path models/gguf/mmproj-ledgerlens-f16.gguf \
+    --model-path models/gguf/sft2b-teacher-agree-q4_k_m.gguf --mmproj-path models/gguf/mmproj-sft2b-teacher-agree-f16.gguf \
     --tag student2b-q4km --host laptop-cpu
 ```
 
@@ -143,7 +159,7 @@ python scripts/quantize_ptq.py awq  --model runs/sft-2b-merged --out models/stud
 python scripts/qat_torchao.py       --model runs/sft-2b-merged --data data/distill/cord_train_teacher.jsonl --out models/student2b-qat
 python scripts/prune.py             --model runs/sft-2b-merged --drop 6 --calib data/distill/cord_train_teacher.jsonl --image-root <train-data-mount> --out models/student2b-prune6
 python scripts/export_gguf.py       --model runs/sft-2b-merged --name ledgerlens
-python scripts/bench_efficiency.py gguf --model models/gguf/ledgerlens-q4_k_m.gguf --mmproj models/gguf/mmproj-ledgerlens-f16.gguf --image <receipt.jpg> --tag student2b-q4km --host laptop-cpu
+python scripts/bench_efficiency.py gguf --model models/gguf/sft2b-teacher-agree-q4_k_m.gguf --mmproj models/gguf/mmproj-sft2b-teacher-agree-f16.gguf --image <receipt.jpg> --tag student2b-q4km --host laptop-cpu
 ```
 
 ## Mobile app
