@@ -160,6 +160,12 @@ those are manual on-device observations, not `bench_efficiency.py`/`results.csv`
 harness output, and this project's own hard rule is that published numbers come from
 the harness, not hand-transcription (see below).
 
+<p align="center">
+  <img src="docs/screenshots/scan-queue-emulator.png" width="300" alt="LedgerLens Scan tab: camera viewfinder, Capture receipt button, and a scan queue with one finished extraction (WESTERN EASTERN STATIONERY SDN. BHD, MYR 7.42) and one still extracting on-device">
+</p>
+
+*Scan tab of a **debug build on the Android emulator**, not a phone: the viewfinder shows the emulator's synthetic camera scene, and the "(dev) queue test image" button is debug-only. The scan queue shows one finished on-device extraction of a real SROIE test receipt (vendor, currency, total read correctly) and a second receipt still extracting while the camera stays live for the next shot.*
+
 `android/` is an earlier Kotlin/Compose prototype (same idea: camera → local llama.cpp
 `mtmd` inference → JSON), **kept for reference only, superseded by `mobile/`**. See
 [android/README.md](android/README.md) if you want to build it anyway.
