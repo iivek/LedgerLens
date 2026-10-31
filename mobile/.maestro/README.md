@@ -19,6 +19,15 @@ Install: https://maestro.mobile.dev (`curl -fsSL "https://get.maestro.mobile.dev
 - `03_receipt_detail_delete_to_empty_state.yaml` -- detail view, delete confirmation, deleting
   everything lands on the real empty state (regression coverage for the seed-on-every-empty-boot
   bug).
+- `04_scan_edit_save_demo.yaml` -- full demo flow: launch, queue the test image, wait for real
+  extraction, expand the row, edit fields, categorize, save, confirm on Dashboard. Same setup
+  requirements as `01`. Generously timed (extraction timeout up to 900s) because it's tuned for
+  running on an emulator under heavy host load, not just real hardware — see the timeout comment
+  in the file itself for measured variance.
+- `04b_continuation_after_extraction.yaml` -- companion to `04`, split out so a slow cold model
+  load (minutes, on a loaded emulator) doesn't have to be repeated just to re-demo the fast,
+  interactive expand → edit → save part. Skips `launchApp`, so it only works picking up from a
+  state where an item has *already* finished extracting and is sitting in the queue.
 
 ## Scan queue
 
@@ -82,3 +91,16 @@ If `02` hangs or fails only on the emulator, don't chase it there -- run it agai
 Also note `02`'s two `queue-discard-0` taps race the background worker (the item at index 0 may
 still be `queued` or already `processing`/`done` by the time each tap lands) -- that's deliberate,
 not flaky-test tolerance: discarding at any of those stages is exactly the behavior being tested.
+
+## Known false lead: "the expand toggle is broken" (it wasn't)
+
+If a flow's `tapOn` a finished queue row succeeds but a following `assertVisible: "Vendor"` (or
+similar) fails, **check `scrollUntilVisible` before assuming the tap or the app is broken.** This
+exact symptom cost hours across multiple sessions: the row's expand toggle looked broken (bare
+`assertVisible` failing right after a successful tap, on both Maestro's element tap and raw
+`adb shell input tap`, with the code reviewed clean and state confirmed correct via a temporary
+CDP-exposed debug hook). The real cause was much simpler -- the queue card sits near the bottom
+of a `ScrollView`, so the expanded content renders correctly but off-screen below the fold, and
+`uiautomator dump` doesn't report off-screen content, so `assertVisible` was correctly reporting
+it as not visible (it genuinely wasn't, on screen, without scrolling). `04`/`04b` use
+`scrollUntilVisible` for exactly this reason -- don't revert that to a bare assert.

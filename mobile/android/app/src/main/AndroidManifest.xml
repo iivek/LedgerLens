@@ -18,36 +18,35 @@
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
       <!--
-        Lets llama.rn load libOpenCL.so for GPU-accelerated inference.
+        libOpenCL.so access is deliberately NOT declared here right now;
+        see HISTORY below for when it was, and why it's off again.
 
-        REQUIRES a supported Adreno/OpenCL tier (verified: Adreno 825 on a
-        Nothing Phone 3, Snapdragon 8s Gen 4). CONFIRMED UNSAFE on a
+        REQUIRES a supported Adreno/OpenCL tier (verified safe: Adreno 825
+        on a Nothing Phone 3, Snapdragon 8s Gen 4). CONFIRMED UNSAFE on a
         Snapdragon 778G+ / Adreno 642L device (2026-08-16): OpenCL backend
         registration called ggml_abort(), a hard SIGABRT crash, not a
         graceful fallback, because that GPU isn't in llama.cpp's supported
         tier. This is a single shared manifest with no runtime chip-tier
-        detection, so installing this build on unsupported hardware WILL
-        crash on model load. Do not ship broadly with this declared until
-        that gap is closed (runtime capability check, or confirmation from
-        a newer llama.rn that registration fails gracefully instead of
-        aborting).
+        detection, so installing a build with this declared on unsupported
+        hardware WILL crash on model load. Do not ship broadly with this
+        declared until that gap is closed (runtime capability check, or
+        confirmation from a newer llama.rn that registration fails
+        gracefully instead of aborting).
 
-        HISTORY: on the Nothing Phone 3, this measured 18.8s extractions
-        with exact-match accuracy (2026-08-16), then was suspected (wrongly)
-        of degrading and removed (2026-08-17) when extraction started
-        failing; the real cause, found the same session, was severe SoC
-        thermal throttling (Thermal Status SEVERE, CPU cores up to 99.9C),
-        confirmed via `dumpsys thermalservice` and an emulator control
-        comparison. Re-verified cool and correct with this declaration
-        ABSENT on 2026-08-24 (CPU-only, ~2min/extraction). Re-enabling here
-        the same day specifically to re-verify the accelerated path on the
-        now-cooled Nothing Phone 3, with thermals monitored throughout the
-        test; see CLAUDE.md's mobile caveat section for the full evidence
-        chain and this re-verification's result once recorded.
+        HISTORY: on the Nothing Phone 3, this measured 18.8-31s extractions
+        with exact-match accuracy across two sessions (2026-08-16,
+        2026-08-24; the latter after a thermal-throttling false alarm in
+        between, see CLAUDE.md's mobile caveat section for that full
+        evidence chain). REMOVED AGAIN on 2026-08-31 before ever installing
+        on a third test device (a HONOR REA-NX9): `/sys/class/kgsl/kgsl-3d0/gpu_model`
+        reports Adreno 644, `ro.vendor.qti.soc_id` reports SM7450
+        (Snapdragon 7 Gen 1), a mid-range 6-series Adreno GPU in the same
+        family as the 642L that already confirmed-crashed, not the
+        750+/8-series flagship tier the accelerated path is verified safe
+        on. Disabled pre-emptively rather than risk-testing the crash on
+        real hardware; CPU-only fallback (the code path this absence
+        forces) is the one to verify working on this device.
       -->
-      <uses-native-library
-        android:name="libOpenCL.so"
-        android:required="false" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

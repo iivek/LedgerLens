@@ -146,9 +146,23 @@ python scripts/export_gguf.py       --model runs/sft-2b-merged --name ledgerlens
 python scripts/bench_efficiency.py gguf --model models/gguf/ledgerlens-q4_k_m.gguf --mmproj models/gguf/mmproj-ledgerlens-f16.gguf --image <receipt.jpg> --tag student2b-q4km --host laptop-cpu
 ```
 
-## Android app
+## Mobile app
 
-`android/` contains a Kotlin/Compose app (camera → local llama.cpp `mtmd` inference → JSON, visible latency timer, **no INTERNET permission**). See [android/README.md](android/README.md) — it requires a llama.cpp submodule checkout and Android Studio; the JNI layer is written against the current mtmd API and must be validated against a pinned llama.cpp tag on first build.
+`mobile/` is a **React Native app and the active app** — camera → on-device `llama.rn`
+inference → structured JSON, editable review card, local SQLite ledger, **no INTERNET
+permission** in the release manifest. Verified end-to-end on real hardware (Nothing
+Phone 3), with a real, chip-gated GPU-vs-CPU-fallback latency gap. See
+[mobile/README.md](mobile/README.md) for setup, and [CLAUDE.md](CLAUDE.md)'s mobile
+caveat section for the actual measured numbers plus the full on-device debugging
+history (a thermal-throttling incident, a GPU-acceleration regression and its later
+reversal, and the evidence trail behind both) — deliberately not repeated here, since
+those are manual on-device observations, not `bench_efficiency.py`/`results.csv`
+harness output, and this project's own hard rule is that published numbers come from
+the harness, not hand-transcription (see below).
+
+`android/` is an earlier Kotlin/Compose prototype (same idea: camera → local llama.cpp
+`mtmd` inference → JSON), **kept for reference only, superseded by `mobile/`**. See
+[android/README.md](android/README.md) if you want to build it anyway.
 
 ## Tests
 
@@ -156,6 +170,40 @@ python scripts/bench_efficiency.py gguf --model models/gguf/ledgerlens-q4_k_m.gg
 uv run pytest
 ```
 
+## Sharing the model
+
+Model weights are never committed to this repo (`models/`, `runs/` are gitignored —
+see [CLAUDE.md](CLAUDE.md)'s environment notes). To share a checkpoint:
+
+1. **Host on [Hugging Face Hub](https://huggingface.co)** — the standard place for both
+   the fp16/safetensors checkpoint and the deployment GGUF (+ mmproj). Create the repo,
+   then `huggingface-cli upload <repo> models/gguf/`.
+2. **Set the model card's license to `other`**, with `license_name: polyform-noncommercial-1.0.0`
+   and `license_link` pointing straight back to this GitHub repo's
+   [`MODEL_LICENSE.md`](MODEL_LICENSE.md) — HF's model-card metadata accepts an external URL
+   for `license_link`, no need to duplicate the license text into the HF repo itself.
+3. **Attribute the training data in the model card**, per
+   [`DATA_LICENSES.md`](DATA_LICENSES.md): CORD (CC BY 4.0, NAVER CLOVA) and SROIE
+   (ICDAR 2019 RRC Task 3, license unconfirmed — flag the model as research-use only on
+   this basis independent of whichever license text is chosen, since that constraint
+   comes from the upstream data, not from this project's own licensing decision).
+4. **Link back here** for reproduction (this README's training/compression commands,
+   `results/results.csv` for the numbers, `CLAUDE.md` for architecture/gotchas).
+
+The distillation code itself needs no separate sharing step beyond making this repo
+public — everything under `src/`, `scripts/`, `mobile/`, `android/` is already here,
+already reproducible via the commands above, and already covered by `LICENSE`.
+
 ## License
 
-Apache-2.0 (code). Datasets and derived weights carry their own research-use terms.
+**Code:** [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — see [`LICENSE`](LICENSE). Free for personal, research, educational, and
+other noncommercial use; commercial use requires a separate agreement with the
+copyright holder.
+
+**Model weights:** [`MODEL_LICENSE.md`](MODEL_LICENSE.md) — noncommercial for two
+independent reasons: by choice (same PolyForm terms), and by necessity regardless of
+that choice, since SROIE's dataset-level license is unconfirmed and every checkpoint in
+this project trains on it (see [`DATA_LICENSES.md`](DATA_LICENSES.md)).
+
+**Datasets:** their own terms, not this project's to grant or restrict — see
+[`DATA_LICENSES.md`](DATA_LICENSES.md).

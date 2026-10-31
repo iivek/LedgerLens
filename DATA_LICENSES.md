@@ -1,8 +1,9 @@
 # Dataset licenses & attribution
 
 This project trains on third-party datasets. Their terms are independent of this
-repo's Apache-2.0 code license and apply to the data (and to any model weights
-derived from it) regardless of how the code is licensed.
+repo's code license (see [`LICENSE`](LICENSE)) and apply to the data (and to any model
+weights derived from it, see [`MODEL_LICENSE.md`](MODEL_LICENSE.md)) regardless of how
+the code is licensed.
 
 ## CORD-v2
 

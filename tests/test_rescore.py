@@ -14,7 +14,6 @@ def _rec(id_, vendor):
 
 def test_vendor_disjoint_excludes_overlapping_vendors(tmp_path):
     (tmp_path / "images").mkdir()
-    import shutil
     from PIL import Image
     Image.new("RGB", (4, 4)).save(tmp_path / "images" / "x.png")
 

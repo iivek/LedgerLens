@@ -45,7 +45,7 @@ Freelancers and micro-merchants — especially in emerging markets, on mid-range
 **Weekend 4 — Ship.** Best small variant → GGUF → llama.cpp on Android; measure on-phone latency/RAM; record demo video (photo → JSON, airplane mode ON — the airplane-mode toggle is the money shot). Publish: GitHub repo (harness, data-gen, training scripts), HF model + card, writeup (~1,500 words, honest about what didn't work). 
 
 ## 7. Deliverables checklist
-- [ ] GitHub repo (MIT/Apache, clean README, one-command eval)
+- [ ] GitHub repo (PolyForm Noncommercial, clean README, one-command eval)
 - [ ] HuggingFace: distilled+quantized model with model card (starts the public OSS record the Vision role demands)
 - [ ] Writeup with Pareto plots + failure analysis
 - [ ] 60–90s demo video: airplane mode, photo, JSON, timer visible
